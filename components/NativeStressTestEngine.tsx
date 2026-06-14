@@ -14,7 +14,7 @@ import {
 } from 'react-native';
 import { GLView, ExpoWebGLRenderingContext } from 'expo-gl';
 import * as THREE from 'three';
-import { Renderer } from 'expo-three';
+import { createExpoRenderer } from '../lib/ExpoRenderer';
 import { Colors, FontSize, BorderRadius, Spacing } from '../constants/theme';
 import { BenchmarkResult, calculateScore } from '../lib/scoreCalculator';
 import { runCPUBenchmark } from '../lib/cpuBenchmark';
@@ -32,7 +32,7 @@ interface Props {
 
 export default function NativeStressTestEngine({ onComplete, duration = 60 }: Props) {
   // Three.js refs
-  const rendererRef = useRef<Renderer | null>(null);
+  const rendererRef = useRef<THREE.WebGLRenderer | null>(null);
   const sceneRef = useRef<THREE.Scene | null>(null);
   const cameraRef = useRef<THREE.PerspectiveCamera | null>(null);
   const cubesRef = useRef<THREE.Mesh[]>([]);
@@ -64,11 +64,9 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     const W = gl.drawingBufferWidth;
     const H = gl.drawingBufferHeight;
 
-    // expo-three Renderer (wraps native OpenGL ES)
-    const renderer = new Renderer({ gl });
-    renderer.setSize(W, H);
-    renderer.setClearColor(0x080b12, 1);
-    renderer.shadowMap.enabled = false;
+    // Custom Renderer (three@0.162 + expo-gl WebGL1 context)
+    // expo-three bị bỏ vì three@0.163+ yêu cầu WebGL2 nhưng expo-gl cho WebGL1
+    const renderer = createExpoRenderer(gl);
     rendererRef.current = renderer;
 
     // Scene
