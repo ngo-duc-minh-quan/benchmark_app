@@ -88,13 +88,13 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     dirLight.position.set(10, 20, 10);
     scene.add(dirLight);
 
-    scene.add(Object.assign(new THREE.PointLight(0x7c3aed, 5, 40), {
-      position: new THREE.Vector3(-15, 10, 0),
-    }));
+    const pLight1 = new THREE.PointLight(0x7c3aed, 5, 40);
+    pLight1.position.set(-15, 10, 0);
+    scene.add(pLight1);
 
-    scene.add(Object.assign(new THREE.PointLight(0xff3b3b, 3, 30), {
-      position: new THREE.Vector3(15, 5, -10),
-    }));
+    const pLight2 = new THREE.PointLight(0xff3b3b, 3, 30);
+    pLight2.position.set(15, 5, -10);
+    scene.add(pLight2);
 
     // Ground plane
     const ground = new THREE.Mesh(
