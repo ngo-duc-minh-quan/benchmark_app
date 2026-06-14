@@ -6,21 +6,16 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "dark",
-    "splash": {
-      "image": "./assets/splash-icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#050A18"
-    },
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.benchmarkx.native",
+      "bundleIdentifier": "com.benchmarkx.app",
       "infoPlist": {
         "UIRequiresPersistentWifi": false,
         "NSMotionUsageDescription": "Used for device sensor data during benchmark"
       }
     },
     "android": {
-      "package": "com.benchmarkx.native",
+      "package": "com.benchmarkx.app",
       "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#050A18",
@@ -37,7 +32,16 @@
       "favicon": "./assets/favicon.png"
     },
     "plugins": [
-      "expo-asset"
+      "expo-asset",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 200,
+          "resizeMode": "contain",
+          "backgroundColor": "#050A18"
+        }
+      ]
     ],
     "extra": {
       "eas": {

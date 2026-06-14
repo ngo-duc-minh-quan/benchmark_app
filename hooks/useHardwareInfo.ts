@@ -1,11 +1,11 @@
 // hooks/useHardwareInfo.ts
-// Native hardware detection using react-native-device-info + expo-battery
-// Replaces HardwareDetector.tsx (web-based UA parser approach)
+// Native hardware detection using expo-device + expo-battery
+// expo-device is maintained by Expo team → no Gradle conflicts
 
 import { useEffect, useState } from 'react';
-import { Dimensions, Platform } from 'react-native';
+import { Dimensions, Platform, PixelRatio } from 'react-native';
 import * as Battery from 'expo-battery';
-import DeviceInfo from 'react-native-device-info';
+import * as Device from 'expo-device';
 
 export interface HardwareInfo {
   deviceName: string;
@@ -30,29 +30,27 @@ export function useHardwareInfo() {
   useEffect(() => {
     async function detect() {
       try {
-        // 1. Device identity (REAL values, not guessing via UA)
-        const brand = DeviceInfo.getBrand();          // e.g. "Xiaomi"
-        const model = DeviceInfo.getModel();          // e.g. "2501GRN3DH"
+        // 1. Device identity via expo-device (no Gradle issues)
+        const brand = Device.brand ?? 'Unknown';         // e.g. "Xiaomi"
+        const model = Device.modelName ?? 'Device';     // e.g. "Redmi Turbo 4 Pro"
         const deviceName = `${brand} ${model}`;
 
         // 2. OS version
-        const osVersion = DeviceInfo.getSystemVersion();
-        const os = `${Platform.OS === 'android' ? 'Android' : 'iOS'} ${osVersion}`;
+        const osVersion = Device.osVersion ?? '';
+        const osName = Device.osName ?? (Platform.OS === 'android' ? 'Android' : 'iOS');
+        const os = `${osName} ${osVersion}`.trim();
 
-        // 3. CPU cores (real count)
-        const cpuCores = await DeviceInfo.getAvailableLocationProviders()
-          .then(() => DeviceInfo.getDeviceName())
-          .then(() => {
-            // react-native-device-info doesn't have direct CPU cores API
-            // but we can get total memory to estimate
-            return 8; // fallback; use native module if available
-          });
+        // 3. CPU cores — expo-device doesn't expose directly, estimate from supportedCpuArchitectures
+        // Use a reasonable default based on device class
+        const cpuCores = 8; // expo-device does not expose CPU count
 
-        // 4. RAM (REAL value in GB)
-        const totalRamBytes = await DeviceInfo.getTotalMemory();
-        const ramGB = parseFloat((totalRamBytes / (1024 * 1024 * 1024)).toFixed(1));
+        // 4. RAM (REAL value in GB via expo-device)
+        const totalRamBytes = await Device.getMaxMemoryAsync();
+        const ramGB = totalRamBytes > 0
+          ? parseFloat((totalRamBytes / (1024 * 1024 * 1024)).toFixed(1))
+          : 8;
 
-        // 5. Battery (works on both Android AND iOS — fixes the web limitation!)
+        // 5. Battery (works on both Android AND iOS!)
         let batteryLevel = 100;
         let batteryCharging = false;
         let batterySupported = false;
@@ -62,19 +60,19 @@ export function useHardwareInfo() {
             Battery.getBatteryStateAsync(),
           ]);
           batteryLevel = Math.round(level * 100);
-          batteryCharging = state === Battery.BatteryState.CHARGING ||
-                            state === Battery.BatteryState.FULL;
+          batteryCharging =
+            state === Battery.BatteryState.CHARGING ||
+            state === Battery.BatteryState.FULL;
           batterySupported = true;
         } catch {
           batterySupported = false;
         }
 
-        // 6. Screen dimensions (real device pixels)
+        // 6. Screen dimensions
         const { width, height } = Dimensions.get('screen');
-        const { PixelRatio } = require('react-native');
         const pixelRatio = PixelRatio.get();
 
-        // 7. GPU (will be filled by the GLView context in BenchmarkScreen)
+        // 7. GPU (filled by GLView context later)
         const gpuRenderer = 'OpenGL ES (Native)';
 
         const hardwareInfo: HardwareInfo = {
@@ -95,7 +93,7 @@ export function useHardwareInfo() {
       } catch (err) {
         console.error('Hardware detection failed:', err);
         setError(String(err));
-        // Fallback
+        // Fallback values
         setInfo({
           deviceName: 'Unknown Device',
           os: Platform.OS === 'android' ? 'Android' : 'iOS',
@@ -120,7 +118,9 @@ export function useHardwareInfo() {
   // Live battery level listener
   useEffect(() => {
     const subscription = Battery.addBatteryLevelListener(({ batteryLevel }) => {
-      setInfo(prev => prev ? { ...prev, batteryLevel: Math.round(batteryLevel * 100) } : prev);
+      setInfo(prev =>
+        prev ? { ...prev, batteryLevel: Math.round(batteryLevel * 100) } : prev,
+      );
     });
 
     return () => {
