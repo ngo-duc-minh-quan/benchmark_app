@@ -9,6 +9,7 @@ import HomeScreen from './screens/HomeScreen';
 import BenchmarkScreen from './screens/BenchmarkScreen';
 import CompareScreen from './screens/CompareScreen';
 import { Colors } from './constants/theme';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { BenchmarkResult } from './lib/scoreCalculator';
 
 export type RootStackParamList = {
@@ -21,21 +22,23 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export default function App() {
   return (
-    <SafeAreaProvider>
-      <NavigationContainer>
-        <Stack.Navigator
-          initialRouteName="Home"
-          screenOptions={{
-            headerShown: false,
-            contentStyle: { backgroundColor: Colors.bgDark },
-            animation: 'slide_from_right',
-          }}
-        >
-          <Stack.Screen name="Home" component={HomeScreen} />
-          <Stack.Screen name="Benchmark" component={BenchmarkScreen} />
-          <Stack.Screen name="Compare" component={CompareScreen} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <ErrorBoundary fallbackLabel="App">
+      <SafeAreaProvider>
+        <NavigationContainer>
+          <Stack.Navigator
+            initialRouteName="Home"
+            screenOptions={{
+              headerShown: false,
+              contentStyle: { backgroundColor: Colors.bgDark },
+              animation: 'slide_from_right',
+            }}
+          >
+            <Stack.Screen name="Home" component={HomeScreen} />
+            <Stack.Screen name="Benchmark" component={BenchmarkScreen} />
+            <Stack.Screen name="Compare" component={CompareScreen} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </ErrorBoundary>
   );
 }

@@ -56,6 +56,7 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
   const [peakFPS, setPeakFPS] = useState(0);
   const [minFPSLive, setMinFPSLive] = useState(999);
   const [detectedHz, setDetectedHz] = useState<number | null>(null);
+  const [glError, setGlError] = useState<string | null>(null); // GL init error
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   // ─── Build Three.js scene ───────────────────────────────────────────────
@@ -67,8 +68,6 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     const renderer = new Renderer({ gl });
     renderer.setSize(W, H);
     renderer.setClearColor(0x080b12, 1);
-    // NOTE: renderer.shadowMap is available but expensive on mobile,
-    // disable for benchmark accuracy
     renderer.shadowMap.enabled = false;
     rendererRef.current = renderer;
 
@@ -84,7 +83,7 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     camera.lookAt(0, 0, 0);
     cameraRef.current = camera;
 
-    // Lighting — same as web version
+    // Lighting
     scene.add(new THREE.AmbientLight(0x1a2040, 2));
 
     const dirLight = new THREE.DirectionalLight(0x00d4ff, 3);
@@ -108,7 +107,7 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     ground.position.y = -5;
     scene.add(ground);
 
-    // ── 4,000 Cubes ── (same workload as web version)
+    // ── 2,000 Cubes (reduced from 4,000 for stability on first run) ──
     const cubes: THREE.Mesh[] = [];
     const geometry = new THREE.BoxGeometry(0.6, 0.6, 0.6);
     const cubeColors = [0x00d4ff, 0x7c3aed, 0xff3b3b, 0xffb800, 0x00e676, 0xff6b35];
@@ -119,7 +118,7 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
       }),
     );
 
-    for (let i = 0; i < 4000; i++) {
+    for (let i = 0; i < 2000; i++) {
       const cube = new THREE.Mesh(geometry, materials[i % materials.length]);
       cube.position.set(
         (Math.random() - 0.5) * 60,
@@ -145,47 +144,53 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
   // ─── GL context ready ──────────────────────────────────────────────────
   const onContextCreate = useCallback((gl: ExpoWebGLRenderingContext) => {
-    glRef.current = gl;
-    buildScene(gl);
+    try {
+      glRef.current = gl;
+      buildScene(gl);
 
-    // Detect actual refresh rate via rAF delta timing
-    const samples: number[] = [];
-    let lastTime = Date.now();
+      // Detect actual refresh rate via rAF delta timing
+      const samples: number[] = [];
+      let lastTime = Date.now();
 
-    const detectHz = () => {
-      const now = Date.now();
-      const delta = now - lastTime;
-      lastTime = now;
-      if (delta > 2 && delta < 60) samples.push(delta);
-      if (samples.length >= 30) {
-        const avgDelta = samples.reduce((a, b) => a + b, 0) / samples.length;
-        const hz = Math.round(1000 / avgDelta);
-        detectedHzRef.current = hz;
-        setDetectedHz(hz);
-        return;
-      }
+      const detectHz = () => {
+        const now = Date.now();
+        const delta = now - lastTime;
+        lastTime = now;
+        if (delta > 2 && delta < 60) samples.push(delta);
+        if (samples.length >= 30) {
+          const avgDelta = samples.reduce((a, b) => a + b, 0) / samples.length;
+          const hz = Math.round(1000 / avgDelta);
+          detectedHzRef.current = hz;
+          setDetectedHz(hz);
+          return;
+        }
+        requestAnimationFrame(detectHz);
+      };
       requestAnimationFrame(detectHz);
-    };
-    requestAnimationFrame(detectHz);
 
-    // Idle preview loop
-    const idleLoop = () => {
-      if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+      // Idle preview loop
+      const idleLoop = () => {
+        if (!rendererRef.current || !sceneRef.current || !cameraRef.current) return;
+        animFrameRef.current = requestAnimationFrame(idleLoop);
+
+        const t = Date.now() / 1000;
+        cubesRef.current.forEach((c, i) => {
+          c.rotation.x += 0.003;
+          c.rotation.y += 0.004;
+          c.position.y = c.userData.baseY + Math.sin(t * 0.5 + i * 0.01) * 0.3;
+        });
+        cameraRef.current.position.x = Math.sin(t * 0.05) * 35;
+        cameraRef.current.position.z = Math.cos(t * 0.05) * 35;
+        cameraRef.current.lookAt(0, 0, 0);
+        rendererRef.current.render(sceneRef.current, cameraRef.current);
+        gl.endFrameEXP();
+      };
       animFrameRef.current = requestAnimationFrame(idleLoop);
-
-      const t = Date.now() / 1000;
-      cubesRef.current.forEach((c, i) => {
-        c.rotation.x += 0.003;
-        c.rotation.y += 0.004;
-        c.position.y = c.userData.baseY + Math.sin(t * 0.5 + i * 0.01) * 0.3;
-      });
-      cameraRef.current.position.x = Math.sin(t * 0.05) * 35;
-      cameraRef.current.position.z = Math.cos(t * 0.05) * 35;
-      cameraRef.current.lookAt(0, 0, 0);
-      rendererRef.current.render(sceneRef.current, cameraRef.current);
-      gl.endFrameEXP(); // Required for expo-gl
-    };
-    animFrameRef.current = requestAnimationFrame(idleLoop);
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.error('[NativeStressTestEngine] GL init failed:', msg);
+      setGlError(msg);
+    }
   }, [buildScene]);
 
   // ─── Score computation ─────────────────────────────────────────────────
@@ -341,130 +346,145 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
   return (
     <View style={styles.container}>
-      {/* Three.js GL View — native OpenGL ES */}
-      <GLView
-        style={styles.glView}
-        onContextCreate={onContextCreate}
-      />
+      {/* GL Error fallback — shown instead of crash */}
+      {glError ? (
+        <View style={styles.glErrorContainer}>
+          <Text style={styles.glErrorIcon}>⚠️</Text>
+          <Text style={styles.glErrorTitle}>GPU Context Error</Text>
+          <Text style={styles.glErrorMsg}>{glError}</Text>
+          <Text style={styles.glErrorHint}>
+            expo-gl / Three.js failed to initialize.{`\n`}
+            Try restarting the app.
+          </Text>
+        </View>
+      ) : (
+        <>
+          {/* Three.js GL View */}
+          <GLView
+            style={styles.glView}
+            onContextCreate={onContextCreate}
+          />
 
-      {/* HUD Overlay */}
-      <View style={styles.hud} pointerEvents="none">
-        {/* Top-left: FPS counter */}
-        <View style={styles.hudTopLeft}>
-          <View style={styles.hudBadge}>
-            <Text style={[styles.fpsNumber, { color: fpsColor }]}>
-              {isRunning ? liveFPS : '—'}
-            </Text>
-            <Text style={styles.fpsLabel}>FPS</Text>
-          </View>
-          {isRunning && (
-            <>
-              <View style={styles.hudBadgeSmall}>
-                <Text style={[styles.hudBadgeValue, { color: Colors.success }]}>{peakFPS}</Text>
-                <Text style={styles.hudBadgeMeta}> peak</Text>
-              </View>
-              <View style={styles.hudBadgeSmall}>
-                <Text style={[styles.hudBadgeValue, { color: Colors.danger }]}>
-                  {minFPSLive === 999 ? '—' : minFPSLive}
+          {/* HUD Overlay */}
+          <View style={styles.hud} pointerEvents="none">
+            {/* Top-left: FPS counter */}
+            <View style={styles.hudTopLeft}>
+              <View style={styles.hudBadge}>
+                <Text style={[styles.fpsNumber, { color: fpsColor }]}>
+                  {isRunning ? liveFPS : '—'}
                 </Text>
-                <Text style={styles.hudBadgeMeta}> min</Text>
+                <Text style={styles.fpsLabel}>FPS</Text>
               </View>
-            </>
-          )}
-        </View>
-
-        {/* Top-right: cube count + detected Hz */}
-        <View style={styles.hudTopRight}>
-          <View style={styles.hudBadge}>
-            <Text style={styles.hudInfoText}>4,000 cubes</Text>
-          </View>
-          {detectedHz !== null && (
-            <View style={[styles.hudBadge, {
-              borderColor: detectedHz >= 90 ? Colors.primary + '66' : Colors.warning + '66',
-            }]}>
-              <Text style={[styles.hudInfoText, {
-                color: detectedHz >= 90 ? Colors.primary : Colors.warning,
-              }]}>
-                {detectedHz}Hz
-              </Text>
+              {isRunning && (
+                <>
+                  <View style={styles.hudBadgeSmall}>
+                    <Text style={[styles.hudBadgeValue, { color: Colors.success }]}>{peakFPS}</Text>
+                    <Text style={styles.hudBadgeMeta}> peak</Text>
+                  </View>
+                  <View style={styles.hudBadgeSmall}>
+                    <Text style={[styles.hudBadgeValue, { color: Colors.danger }]}>
+                      {minFPSLive === 999 ? '—' : minFPSLive}
+                    </Text>
+                    <Text style={styles.hudBadgeMeta}> min</Text>
+                  </View>
+                </>
+              )}
             </View>
-          )}
-        </View>
 
-        {/* Progress bar */}
-        {isRunning && (
-          <View style={styles.progressTrack}>
-            <Animated.View
-              style={[styles.progressBar, {
-                width: progressAnim.interpolate({
-                  inputRange: [0, 1],
-                  outputRange: ['0%', '100%'],
-                }),
-              }]}
-            />
-          </View>
-        )}
-
-        {/* Idle label */}
-        {isIdle && (
-          <View style={styles.centerOverlay} pointerEvents="none">
-            <View style={styles.centerCard}>
-              <Text style={styles.centerText}>
-                {testState === 'done' ? '✅ Test Complete' : 'Preview Mode'}
-              </Text>
-              <Text style={styles.centerSubText}>
-                {testState === 'done' ? 'View your score below' : 'Tap Start to begin benchmark'}
-              </Text>
+            {/* Top-right: cube count + detected Hz */}
+            <View style={styles.hudTopRight}>
+              <View style={styles.hudBadge}>
+                <Text style={styles.hudInfoText}>2,000 cubes</Text>
+              </View>
+              {detectedHz !== null && (
+                <View style={[styles.hudBadge, {
+                  borderColor: detectedHz >= 90 ? Colors.primary + '66' : Colors.warning + '66',
+                }]}>
+                  <Text style={[styles.hudInfoText, {
+                    color: detectedHz >= 90 ? Colors.primary : Colors.warning,
+                  }]}>
+                    {detectedHz}Hz
+                  </Text>
+                </View>
+              )}
             </View>
-          </View>
-        )}
 
-        {/* CPU phase overlay */}
-        {isCPU && (
-          <View style={[styles.centerOverlay, styles.blockingOverlay]}>
-            <ActivityIndicator size="large" color={Colors.secondary} />
-            <Text style={styles.phaseTitle}>Phase 1: CPU Compute Test</Text>
-            <Text style={styles.phaseSubTitle}>Running prime sieve + matrix math...</Text>
-          </View>
-        )}
+            {/* Progress bar */}
+            {isRunning && (
+              <View style={styles.progressTrack}>
+                <Animated.View
+                  style={[styles.progressBar, {
+                    width: progressAnim.interpolate({
+                      inputRange: [0, 1],
+                      outputRange: ['0%', '100%'],
+                    }),
+                  }]}
+                />
+              </View>
+            )}
 
-        {/* Computing overlay */}
-        {isComputing && (
-          <View style={[styles.centerOverlay, styles.blockingOverlay]}>
-            <ActivityIndicator size="large" color={Colors.primary} />
-            <Text style={styles.phaseTitle}>Computing Score...</Text>
-            <Text style={styles.phaseSubTitle}>Analyzing {fpsArrayRef.current.length} FPS samples</Text>
-          </View>
-        )}
-      </View>
+            {/* Idle label */}
+            {isIdle && (
+              <View style={styles.centerOverlay} pointerEvents="none">
+                <View style={styles.centerCard}>
+                  <Text style={styles.centerText}>
+                    {testState === 'done' ? '✅ Test Complete' : 'Preview Mode'}
+                  </Text>
+                  <Text style={styles.centerSubText}>
+                    {testState === 'done' ? 'View your score below' : 'Tap Start to begin benchmark'}
+                  </Text>
+                </View>
+              </View>
+            )}
 
-      {/* Controls bar */}
-      <View style={styles.controls}>
-        {isIdle && (
-          <TouchableOpacity
-            style={styles.startButton}
-            onPress={startTest}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.startButtonText}>
-              ▶ Start Benchmark ({duration}s)
-            </Text>
-          </TouchableOpacity>
-        )}
-        {isRunning && (
-          <View style={styles.runningControls}>
-            <View style={styles.progressBadge}>
-              <View style={styles.recordingDot} />
-              <Text style={styles.progressText}>
-                {Math.round(progress)}% · {Math.round((duration * (100 - progress)) / 100)}s left
-              </Text>
-            </View>
-            <TouchableOpacity style={styles.stopButton} onPress={stopTest}>
-              <Text style={styles.stopButtonText}>■ Stop</Text>
-            </TouchableOpacity>
+            {/* CPU phase overlay */}
+            {isCPU && (
+              <View style={[styles.centerOverlay, styles.blockingOverlay]}>
+                <ActivityIndicator size="large" color={Colors.secondary} />
+                <Text style={styles.phaseTitle}>Phase 1: CPU Compute Test</Text>
+                <Text style={styles.phaseSubTitle}>Running prime sieve + matrix math...</Text>
+              </View>
+            )}
+
+            {/* Computing overlay */}
+            {isComputing && (
+              <View style={[styles.centerOverlay, styles.blockingOverlay]}>
+                <ActivityIndicator size="large" color={Colors.primary} />
+                <Text style={styles.phaseTitle}>Computing Score...</Text>
+                <Text style={styles.phaseSubTitle}>Analyzing {fpsArrayRef.current.length} FPS samples</Text>
+              </View>
+            )}
           </View>
-        )}
-      </View>
+
+          {/* Controls bar */}
+          <View style={styles.controls}>
+            {isIdle && (
+              <TouchableOpacity
+                style={styles.startButton}
+                onPress={startTest}
+                activeOpacity={0.85}
+              >
+                <Text style={styles.startButtonText}>
+                  ▶ Start Benchmark ({duration}s)
+                </Text>
+              </TouchableOpacity>
+            )}
+            {isRunning && (
+              <View style={styles.runningControls}>
+                <View style={styles.progressBadge}>
+                  <View style={styles.recordingDot} />
+                  <Text style={styles.progressText}>
+                    {Math.round(progress)}% · {Math.round((duration * (100 - progress)) / 100)}s left
+                  </Text>
+                </View>
+                <TouchableOpacity style={styles.stopButton} onPress={stopTest}>
+                  <Text style={styles.stopButtonText}>■ Stop</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </>
+      )}
     </View>
   );
 }
@@ -659,5 +679,32 @@ const styles = StyleSheet.create({
     color: Colors.text.primary,
     fontWeight: '600',
     fontSize: FontSize.sm,
+  },
+  // GL error fallback
+  glErrorContainer: {
+    height: CANVAS_HEIGHT,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(255,59,59,0.05)',
+    gap: Spacing.sm,
+    padding: Spacing.lg,
+  },
+  glErrorIcon: { fontSize: 36 },
+  glErrorTitle: {
+    fontSize: FontSize.md,
+    fontWeight: '700',
+    color: Colors.danger,
+  },
+  glErrorMsg: {
+    fontSize: FontSize.xs,
+    color: Colors.text.secondary,
+    textAlign: 'center',
+    fontFamily: 'monospace',
+  },
+  glErrorHint: {
+    fontSize: FontSize.xs,
+    color: Colors.text.muted,
+    textAlign: 'center',
+    lineHeight: 18,
   },
 });
