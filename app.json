@@ -1,25 +1,48 @@
 {
   "expo": {
-    "name": "benchmarkx-app",
-    "slug": "benchmarkx-app",
+    "name": "BenchmarkX",
+    "slug": "benchmarkx-native",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050A18"
+    },
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": false,
+      "bundleIdentifier": "com.benchmarkx.native",
+      "infoPlist": {
+        "UIRequiresPersistentWifi": false,
+        "NSMotionUsageDescription": "Used for device sensor data during benchmark"
+      }
     },
     "android": {
+      "package": "com.benchmarkx.native",
+      "versionCode": 1,
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#050A18",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "permissions": [
+        "android.permission.READ_PHONE_STATE"
+      ],
+      "softwareKeyboardLayoutMode": "pan"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-asset"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "0085ddd3-e49a-438b-a629-262645e137f9"
+      }
     }
   }
 }
