@@ -53,16 +53,52 @@ const FEATURES = [
 export default function HomeScreen() {
   const navigation = useNavigation<HomeNav>();
   const { info, loading } = useHardwareInfo();
+  
+  // Animation values
   const pulseAnim = useRef(new Animated.Value(0.97)).current;
+  const heroOpacity = useRef(new Animated.Value(0)).current;
+  const heroTranslateY = useRef(new Animated.Value(-30)).current;
+  const cardOpacity = useRef(new Animated.Value(0)).current;
+  const cardTranslateY = useRef(new Animated.Value(20)).current;
+  const buttonOpacity = useRef(new Animated.Value(0)).current;
+  const buttonScale = useRef(new Animated.Value(0.9)).current;
+  const featuresOpacity = useRef(new Animated.Value(0)).current;
+  const featuresTranslateY = useRef(new Animated.Value(30)).current;
 
   React.useEffect(() => {
+    // Pulse animation for logo
     Animated.loop(
       Animated.sequence([
         Animated.timing(pulseAnim, { toValue: 1.03, duration: 2000, useNativeDriver: true }),
         Animated.timing(pulseAnim, { toValue: 0.97, duration: 2000, useNativeDriver: true }),
       ]),
     ).start();
-  }, [pulseAnim]);
+
+    // Staggered Entrance animation sequence
+    Animated.sequence([
+      Animated.delay(100),
+      // 1. Hero section animates in
+      Animated.parallel([
+        Animated.timing(heroOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(heroTranslateY, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]),
+      // 2. Device card animates in
+      Animated.parallel([
+        Animated.timing(cardOpacity, { toValue: 1, duration: 400, useNativeDriver: true }),
+        Animated.timing(cardTranslateY, { toValue: 0, duration: 400, useNativeDriver: true }),
+      ]),
+      // 3. Buttons animate in with Spring scale
+      Animated.parallel([
+        Animated.timing(buttonOpacity, { toValue: 1, duration: 300, useNativeDriver: true }),
+        Animated.spring(buttonScale, { toValue: 1, friction: 6, tension: 50, useNativeDriver: true }),
+      ]),
+      // 4. Features grid & Footer animate in
+      Animated.parallel([
+        Animated.timing(featuresOpacity, { toValue: 1, duration: 500, useNativeDriver: true }),
+        Animated.timing(featuresTranslateY, { toValue: 0, duration: 500, useNativeDriver: true }),
+      ]),
+    ]).start();
+  }, [pulseAnim, heroOpacity, heroTranslateY, cardOpacity, cardTranslateY, buttonOpacity, buttonScale, featuresOpacity, featuresTranslateY]);
 
   return (
     <View style={styles.screen}>
@@ -79,7 +115,7 @@ export default function HomeScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Hero Section */}
-        <View style={styles.hero}>
+        <Animated.View style={[styles.hero, { opacity: heroOpacity, transform: [{ translateY: heroTranslateY }] }]}>
           <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
             <Text style={styles.heroIcon}>⚡</Text>
           </Animated.View>
@@ -100,60 +136,68 @@ export default function HomeScreen() {
             The most accurate mobile GPU/CPU benchmark.{'\n'}
             No browser limits. No guessing. Real hardware data.
           </Text>
-        </View>
+        </Animated.View>
 
         {/* Device Info Card */}
         {!loading && info && (
-          <GlassCard style={styles.deviceCard} glowColor={Colors.primary}>
-            <Text style={styles.sectionLabel}>📱 Your Device</Text>
-            <Text style={styles.deviceName}>{info.deviceName}</Text>
-            <Text style={styles.deviceOS}>{info.os}</Text>
+          <Animated.View style={{ opacity: cardOpacity, transform: [{ translateY: cardTranslateY }] }}>
+            <GlassCard style={styles.deviceCard} glowColor={Colors.primary}>
+              <Text style={styles.sectionLabel}>📱 Your Device</Text>
+              <Text style={styles.deviceName}>{info.deviceName}</Text>
+              <Text style={styles.deviceOS}>
+                {info.os} · {info.socName} ({info.cpuCores} Cores)
+              </Text>
 
-            <View style={styles.deviceGrid}>
-              <DeviceStat icon="🧠" label="RAM" value={`${info.ramGB} GB`} />
-              <DeviceStat icon="🖥" label="Screen" value={`${info.screenWidth}×${info.screenHeight}`} />
-              <DeviceStat
-                icon="🔋"
-                label="Battery"
-                value={info.batterySupported ? `${info.batteryLevel}%${info.batteryCharging ? ' ⚡' : ''}` : 'N/A'}
-              />
-              <DeviceStat icon="📐" label="DPI" value={`${info.pixelRatio}x`} />
-            </View>
-          </GlassCard>
+              <View style={styles.deviceGrid}>
+                <DeviceStat icon="🧠" label="RAM" value={`${info.freeRAMGB}G / ${info.ramGB}G`} />
+                <DeviceStat icon="🖥" label="Screen" value={`${info.screenWidth}×${info.screenHeight}`} />
+                <DeviceStat
+                  icon="🔋"
+                  label="Battery"
+                  value={info.batterySupported ? `${info.batteryLevel}%${info.batteryCharging ? ' ⚡' : ''}` : 'N/A'}
+                />
+                <DeviceStat icon="📐" label="DPI" value={`${info.pixelRatio}x`} />
+              </View>
+            </GlassCard>
+          </Animated.View>
         )}
 
-        {/* CTA Button */}
-        <AnimatedButton
-          onPress={() => navigation.navigate('Benchmark')}
-          label="Start Benchmark"
-          colors={Gradients.primary}
-          size="lg"
-          style={styles.ctaButton}
-        />
+        {/* CTA Buttons */}
+        <Animated.View style={{ opacity: buttonOpacity, transform: [{ scale: buttonScale }], alignSelf: 'stretch', gap: Spacing.xs }}>
+          <AnimatedButton
+            onPress={() => navigation.navigate('Benchmark')}
+            label="Start Benchmark"
+            colors={Gradients.primary}
+            size="lg"
+            style={styles.ctaButton}
+          />
 
-        <TouchableOpacity
-          style={styles.compareLink}
-          onPress={() => navigation.navigate('Compare')}
-        >
-          <Text style={styles.compareLinkText}>📊 View Leaderboard & Compare</Text>
-        </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.compareLink}
+            onPress={() => navigation.navigate('Compare')}
+          >
+            <Text style={styles.compareLinkText}>📊 View Leaderboard & Compare</Text>
+          </TouchableOpacity>
+        </Animated.View>
 
-        {/* Feature Cards */}
-        <Text style={styles.sectionTitle}>Why Native Beats Web</Text>
-        <View style={styles.featuresGrid}>
-          {FEATURES.map((f, i) => (
-            <GlassCard key={i} style={styles.featureCard} glowColor={f.color} padding={14}>
-              <Text style={styles.featureIcon}>{f.icon}</Text>
-              <Text style={[styles.featureTitle, { color: f.color }]}>{f.title}</Text>
-              <Text style={styles.featureDesc}>{f.desc}</Text>
-            </GlassCard>
-          ))}
-        </View>
+        {/* Features & Footer */}
+        <Animated.View style={{ opacity: featuresOpacity, transform: [{ translateY: featuresTranslateY }], gap: Spacing.lg }}>
+          <Text style={styles.sectionTitle}>Why Native Beats Web</Text>
+          <View style={styles.featuresGrid}>
+            {FEATURES.map((f, i) => (
+              <GlassCard key={i} style={styles.featureCard} glowColor={f.color} padding={14}>
+                <Text style={styles.featureIcon}>{f.icon}</Text>
+                <Text style={[styles.featureTitle, { color: f.color }]}>{f.title}</Text>
+                <Text style={styles.featureDesc}>{f.desc}</Text>
+              </GlassCard>
+            ))}
+          </View>
 
-        {/* Footer */}
-        <Text style={styles.footer}>
-          BenchmarkX Native v1.0 · {Platform.OS === 'android' ? 'Android' : 'iOS'}
-        </Text>
+          {/* Footer */}
+          <Text style={styles.footer}>
+            BenchmarkX Native v2.0 · {Platform.OS === 'android' ? 'Android' : 'iOS'}
+          </Text>
+        </Animated.View>
       </ScrollView>
     </View>
   );

@@ -10,7 +10,6 @@ export interface CPUBenchmarkResult {
 
 /**
  * Sieve of Eratosthenes — tìm số nguyên tố đến N
- * Đây là test CPU-intensive cổ điển: nhiều phép toán boolean + memory access
  */
 function primeSieve(limit: number): number {
   const sieve = new Uint8Array(limit + 1).fill(1);
@@ -52,7 +51,36 @@ function matMul(size: number): number {
 }
 
 /**
- * Run CPU benchmark for `durationMs` milliseconds
+ * Normalize Single-Core CPU Score (0-100)
+ */
+export function normalizeSingleCoreScore(ops: number, durationMs: number): number {
+  const opsPerSecond = ops / (durationMs / 1000);
+  // ~1,000,000 ops/sec = 100 score on flagship
+  const score = Math.min(100, (opsPerSecond / 1_000_000) * 100);
+  return Math.round(score * 10) / 10;
+}
+
+/**
+ * Normalize Multi-Core CPU Score (0-100)
+ */
+export function normalizeMultiCoreScore(ops: number, durationMs: number, cores: number): number {
+  const opsPerSecond = ops / (durationMs / 1000);
+  // ~1,000,000 ops/sec * cores * scalingFactor (e.g. 0.70x scaling) = 100 score on flagship
+  const scalingFactor = Math.max(1, cores * 0.7);
+  const targetOpsPerSecond = 1_000_000 * scalingFactor;
+  const score = Math.min(100, (opsPerSecond / targetOpsPerSecond) * 100);
+  return Math.round(score * 10) / 10;
+}
+
+/**
+ * Combined CPU Score: 40% Single-Core + 60% Multi-Core
+ */
+export function calculateCombinedCpuScore(singleCoreScore: number, multiCoreScore: number): number {
+  return Math.round((singleCoreScore * 0.4 + multiCoreScore * 0.6) * 10) / 10;
+}
+
+/**
+ * Run Single-Core CPU benchmark for `durationMs` milliseconds
  * Returns normalized score 0-100
  */
 export async function runCPUBenchmark(durationMs: number = 3000): Promise<CPUBenchmarkResult> {
@@ -80,15 +108,11 @@ export async function runCPUBenchmark(durationMs: number = 3000): Promise<CPUBen
       if (matResult === Infinity) console.log('unlikely');
 
       const elapsed = Date.now() - start;
-      
-      // Normalize: ~80,000 primes in 3s on flagship (Redmi Turbo 4 Pro) = 100 score
-      // Native JS (Hermes) is much faster than web, so calibrate accordingly
-      const opsPerSecond = totalOps / (elapsed / 1000);
-      const score = Math.min(100, (opsPerSecond / 60_000_000) * 100);
+      const score = normalizeSingleCoreScore(totalOps, elapsed);
 
       resolve({
         ops: totalOps,
-        score: Math.round(score * 10) / 10,
+        score,
         durationMs: elapsed,
       });
     }, 50);

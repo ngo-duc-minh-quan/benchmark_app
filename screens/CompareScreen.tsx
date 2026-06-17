@@ -17,7 +17,7 @@ import GlassCard from '../components/GlassCard';
 import AnimatedButton from '../components/AnimatedButton';
 import { benchmarkBaselines, DeviceBaseline } from '../lib/benchmarkBaselines';
 import { tierConfig } from '../lib/scoreCalculator';
-import { fetchLeaderboard, LeaderboardEntry } from '../lib/api';
+import { fetchLeaderboard, LeaderboardEntry, syncOfflineQueue } from '../lib/api';
 import type { RootStackParamList } from '../App';
 
 type CompareNav = NativeStackNavigationProp<RootStackParamList, 'Compare'>;
@@ -51,9 +51,14 @@ export default function CompareScreen() {
 
   // Fetch live leaderboard on mount
   useEffect(() => {
-    fetchLeaderboard().then(entries => {
-      setLiveEntries(entries);
-      setIsOnline(entries.length > 0);
+    syncOfflineQueue().then(({ syncedCount }) => {
+      if (syncedCount > 0) {
+        console.log(`[OfflineSync] Synced ${syncedCount} queued benchmark results.`);
+      }
+      fetchLeaderboard().then(entries => {
+        setLiveEntries(entries);
+        setIsOnline(entries.length > 0);
+      });
     });
   }, []);
 
@@ -61,47 +66,60 @@ export default function CompareScreen() {
   // 1. Live server entries (if online)
   // 2. Local baselines (always as fallback)
   // 3. User result at top (if available)
-  const liveDisplayDevices: DisplayDevice[] = liveEntries.map(e => ({
-    id: `live-${e.id}`,
-    name: e.deviceName,
-    chipset: e.os,
-    ram: '',
-    price: 0,
-    avgFPS: e.avgFPS,
-    onePercentLow: e.onePercentLow,
-    score: e.score,
-    tier: e.tier as 'S' | 'A' | 'B' | 'C',
-    color: (tierConfig as Record<string, { color: string }>)[e.tier]?.color ?? Colors.primary,
-    isLive: true,
-  }));
+  const liveDisplayDevices: DisplayDevice[] = liveEntries
+    .filter(e => e.browser && e.browser.includes('v2'))
+    .map(e => {
+      let chipsetDisplay = e.os;
+      // Parse SC/MC scores from browser signature: e.g. "BenchmarkX Native v2 (Android) (SC: 75.2, MC: 88.4)"
+      const match = e.browser.match(/\(SC:\s*([\d.]+),\s*MC:\s*([\d.]+)\)/);
+      if (match) {
+        chipsetDisplay = `${e.os} (SC: ${match[1]} | MC: ${match[2]})`;
+      }
+      return {
+        id: `live-${e.id}`,
+        name: e.deviceName,
+        chipset: chipsetDisplay,
+        ram: '',
+        price: 0,
+        avgFPS: e.avgFPS,
+        onePercentLow: e.onePercentLow,
+        score: e.score,
+        tier: e.tier as 'S' | 'A' | 'B' | 'C',
+        color: (tierConfig as Record<string, { color: string }>)[e.tier]?.color ?? Colors.primary,
+        isLive: true,
+      };
+    });
 
   // Use live data if available, otherwise baselines
   const baseDevices: DisplayDevice[] = isOnline && liveDisplayDevices.length > 0
     ? liveDisplayDevices
     : benchmarkBaselines.map(b => ({ ...b, isLive: false }));
 
-  const filtered = baseDevices.filter(d =>
-    filterTier === 'ALL' ? true : d.tier === filterTier,
-  );
+  const userDeviceEntry: DisplayDevice | null = userResult
+    ? {
+        id: 'your-device',
+        name: 'Your Device ⭐',
+        chipset: userResult.singleCoreScore !== undefined && userResult.multiCoreScore !== undefined
+          ? `Current Device (SC: ${userResult.singleCoreScore} | MC: ${userResult.multiCoreScore})`
+          : 'Current Device',
+        ram: '',
+        price: 0,
+        avgFPS: userResult.avgFPS,
+        onePercentLow: userResult.onePercentLow,
+        score: userResult.score,
+        tier: userResult.tier,
+        color: '#FFD700',
+        isUser: true,
+      }
+    : null;
 
-  const allDevices: DisplayDevice[] = userResult
-    ? [
-        {
-          id: 'your-device',
-          name: 'Your Device ⭐',
-          chipset: 'Current Device',
-          ram: '',
-          price: 0,
-          avgFPS: userResult.avgFPS,
-          onePercentLow: userResult.onePercentLow,
-          score: userResult.score,
-          tier: userResult.tier,
-          color: '#FFD700',
-          isUser: true,
-        },
-        ...filtered,
-      ]
-    : filtered;
+  const listToFilter = userDeviceEntry
+    ? [userDeviceEntry, ...baseDevices]
+    : baseDevices;
+
+  const allDevices = listToFilter
+    .filter(d => filterTier === 'ALL' ? true : d.tier === filterTier)
+    .sort((a, b) => b.score - a.score);
 
   const maxScore = Math.max(...allDevices.map(d => d.score), 1);
 

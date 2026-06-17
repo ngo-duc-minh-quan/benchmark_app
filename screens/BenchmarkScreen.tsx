@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useRef } from 'react';
 import {
   View,
   Text,
@@ -6,14 +6,18 @@ import {
   ScrollView,
   TouchableOpacity,
   StatusBar,
+  Share,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useNavigation } from '@react-navigation/native';
 import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import ViewShot from 'react-native-view-shot';
+import * as Sharing from 'expo-sharing';
 import { Colors, Gradients, FontSize, Spacing, BorderRadius } from '../constants/theme';
 import GlassCard from '../components/GlassCard';
 import AnimatedButton from '../components/AnimatedButton';
 import NativeStressTestEngine from '../components/NativeStressTestEngine';
+import FPSChart from '../components/FPSChart';
 import { BenchmarkResult, tierConfig } from '../lib/scoreCalculator';
 import { useHardwareInfo } from '../hooks/useHardwareInfo';
 import { saveResultToServer } from '../lib/api';
@@ -23,7 +27,7 @@ type BenchmarkNav = NativeStackNavigationProp<RootStackParamList, 'Benchmark'>;
 
 const DURATION_OPTIONS = [30, 60, 120] as const;
 
-type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
+type SaveStatus = 'idle' | 'saving' | 'saved' | 'offline_saved' | 'error';
 
 export default function BenchmarkScreen() {
   const navigation = useNavigation<BenchmarkNav>();
@@ -32,6 +36,7 @@ export default function BenchmarkScreen() {
   const [selectedDuration, setSelectedDuration] = useState<30 | 60 | 120>(60);
   const [benchmarkKey, setBenchmarkKey] = useState(0);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const viewShotRef = useRef<any>(null);
 
   const handleComplete = useCallback(async (r: BenchmarkResult) => {
     setResult(r);
@@ -42,6 +47,8 @@ export default function BenchmarkScreen() {
       const saveRes = await saveResultToServer(r, info);
       if (saveRes.success) {
         setSaveStatus('saved');
+      } else if (saveRes.isOffline) {
+        setSaveStatus('offline_saved');
       } else {
         setSaveStatus('error');
         console.warn('[BenchmarkScreen] Save failed:', saveRes.error);
@@ -56,6 +63,51 @@ export default function BenchmarkScreen() {
     setSaveStatus('idle');
     setBenchmarkKey(k => k + 1);
   }, []);
+
+  const handleShare = useCallback(async () => {
+    if (!result || !info) return;
+    const shareText = `🎮 BenchmarkX Performance Scorecard 🎮
+
+📱 Device: ${info.deviceName}
+🧠 SoC: ${info.socName} (${info.cpuCores} Cores)
+⚡ Score: ${result.score}/100 (${result.tier}-Tier)
+
+📊 Performance Metrics:
+  • Avg FPS: ${result.avgFPS} FPS
+  • Stability: ${result.stability}%
+  • 1% Low: ${result.onePercentLow} FPS
+  • Thermal Retention: ${result.retention}%
+  • Battery Drain: ${result.batteryDrain}%
+  
+🖥️ GPU: ${result.gpuRenderer || info.gpuRenderer}
+
+Benchmark your device at BenchmarkX!`;
+
+    try {
+      if (viewShotRef.current?.capture) {
+        const uri = await viewShotRef.current.capture();
+        if (await Sharing.isAvailableAsync()) {
+          await Sharing.shareAsync(uri, {
+            mimeType: 'image/png',
+            dialogTitle: 'Share your BenchmarkX Scorecard',
+          });
+          return;
+        }
+      }
+      await Share.share({
+        message: shareText,
+      });
+    } catch (error) {
+      console.warn('[BenchmarkScreen] Image share failed, falling back to text:', error);
+      try {
+        await Share.share({
+          message: shareText,
+        });
+      } catch (err) {
+        console.error('[BenchmarkScreen] Text share fallback failed:', err);
+      }
+    }
+  }, [result, info]);
 
   const tc = result ? tierConfig[result.tier] : null;
 
@@ -114,96 +166,120 @@ export default function BenchmarkScreen() {
         {/* Result Card */}
         {result && tc && (
           <>
-            <GlassCard style={styles.tierCard} glowColor={tc.color}>
-              <View style={styles.tierHeader}>
-                <View style={[styles.tierBadge, { backgroundColor: tc.color + '22', borderColor: tc.color + '55' }]}>
-                  <Text style={[styles.tierLetter, { color: tc.color }]}>{result.tier}</Text>
-                </View>
-                <View style={styles.tierInfo}>
-                  <Text style={[styles.tierLabel, { color: tc.color }]}>{tc.label}</Text>
-                  <Text style={styles.tierDesc}>{tc.desc}</Text>
-                  {/* Save status */}
-                  <Text style={[
-                    styles.saveStatus,
-                    saveStatus === 'saved' && { color: Colors.success },
-                    saveStatus === 'error' && { color: Colors.danger },
-                    saveStatus === 'saving' && { color: Colors.warning },
-                  ]}>
-                    {saveStatus === 'saving' ? '⏳ Saving to leaderboard...' :
-                     saveStatus === 'saved' ? '✅ Saved to leaderboard' :
-                     saveStatus === 'error' ? '⚠️ Offline — not saved' : ''}
-                  </Text>
-                </View>
-                <View style={styles.scoreCircle}>
-                  <Text style={[styles.scoreNumber, { color: tc.color }]}>{result.score}</Text>
-                  <Text style={styles.scoreMax}>/100</Text>
-                </View>
+            <ViewShot
+              ref={viewShotRef}
+              options={{ format: 'png', quality: 0.9 }}
+              style={styles.viewShotContainer}
+            >
+              {/* Image Header */}
+              <View style={styles.viewShotHeader}>
+                <Text style={styles.viewShotHeaderTitle}>⚡ BENCHMARKX SCORECARD</Text>
+                <Text style={styles.viewShotHeaderSubtitle}>Native Performance Report</Text>
               </View>
-            </GlassCard>
 
-            {/* Metrics grid */}
-            <View style={styles.metricsGrid}>
-              <MetricCard
-                label="Avg FPS"
-                value={`${result.avgFPS}`}
-                sub="frames/sec"
-                color={Colors.primary}
-                icon="🎮"
-              />
-              <MetricCard
-                label="GPU Score"
-                value={`${result.gpuScore}`}
-                sub="/ 100"
-                color={Colors.secondary}
-                icon="🖥"
-              />
-              <MetricCard
-                label="CPU Score"
-                value={`${result.cpuScore}`}
-                sub="/ 100"
-                color={Colors.accent}
-                icon="⚡"
-              />
-              <MetricCard
-                label="Stability"
-                value={`${result.stability}%`}
-                sub="frame consistency"
-                color={Colors.success}
-                icon="📈"
-              />
-              <MetricCard
-                label="1% Low"
-                value={`${result.onePercentLow}`}
-                sub="fps (worst frames)"
-                color={Colors.warning}
-                icon="📉"
-              />
-              <MetricCard
-                label="Display"
-                value={`${result.detectedHz}Hz`}
-                sub="detected refresh"
-                color={result.detectedHz >= 90 ? Colors.primary : Colors.warning}
-                icon="📺"
-              />
-              {result.batteryDrain > 0 && (
+              <GlassCard style={styles.tierCard} glowColor={tc.color}>
+                <View style={styles.tierHeader}>
+                  <View style={[styles.tierBadge, { backgroundColor: tc.color + '22', borderColor: tc.color + '55' }]}>
+                    <Text style={[styles.tierLetter, { color: tc.color }]}>{result.tier}</Text>
+                  </View>
+                  <View style={styles.tierInfo}>
+                    <Text style={[styles.tierLabel, { color: tc.color }]}>{tc.label}</Text>
+                    <Text style={styles.tierDesc}>{tc.desc}</Text>
+                    {/* Save status */}
+                    <Text style={[
+                      styles.saveStatus,
+                      saveStatus === 'saved' && { color: Colors.success },
+                      saveStatus === 'offline_saved' && { color: Colors.success },
+                      saveStatus === 'error' && { color: Colors.danger },
+                      saveStatus === 'saving' && { color: Colors.warning },
+                    ]}>
+                      {saveStatus === 'saving' ? '⏳ Saving to leaderboard...' :
+                       saveStatus === 'saved' ? '✅ Saved to leaderboard' :
+                       saveStatus === 'offline_saved' ? '📦 Saved locally (sync when online)' :
+                       saveStatus === 'error' ? '⚠️ Save failed' : ''}
+                    </Text>
+                  </View>
+                  <View style={styles.scoreCircle}>
+                    <Text style={[styles.scoreNumber, { color: tc.color }]}>{result.score}</Text>
+                    <Text style={styles.scoreMax}>/100</Text>
+                  </View>
+                </View>
+              </GlassCard>
+
+              {/* Metrics grid */}
+              <View style={styles.metricsGrid}>
+                <MetricCard
+                  label="Avg FPS"
+                  value={`${result.avgFPS}`}
+                  sub="frames/sec"
+                  color={Colors.primary}
+                  icon="🎮"
+                />
+                <MetricCard
+                  label="GPU Score"
+                  value={`${result.gpuScore}`}
+                  sub="/ 100"
+                  color={Colors.secondary}
+                  icon="🖥"
+                />
+                <MetricCard
+                  label="CPU Score"
+                  value={`${result.cpuScore}`}
+                  sub="/ 100"
+                  color={Colors.accent}
+                  icon="⚡"
+                />
+                <MetricCard
+                  label="Stability"
+                  value={`${result.stability}%`}
+                  sub="frame consistency"
+                  color={Colors.success}
+                  icon="📈"
+                />
+                <MetricCard
+                  label="1% Low"
+                  value={`${result.onePercentLow}`}
+                  sub="fps (worst frames)"
+                  color={Colors.warning}
+                  icon="📉"
+                />
+                <MetricCard
+                  label="Display"
+                  value={`${result.detectedHz}Hz`}
+                  sub="detected refresh"
+                  color={result.detectedHz >= 90 ? Colors.primary : Colors.warning}
+                  icon="📺"
+                />
+                <MetricCard
+                  label="Thermal Retention"
+                  value={`${result.retention}%`}
+                  sub={result.retention >= 85 ? "Excellent thermal" : result.retention >= 70 ? "Minor throttling" : "Heavy throttling"}
+                  color={result.retention >= 85 ? Colors.success : result.retention >= 70 ? Colors.warning : Colors.danger}
+                  icon="🌡️"
+                />
                 <MetricCard
                   label="Battery Drain"
                   value={`${result.batteryDrain}%`}
-                  sub={`${result.batteryEfficiency.toFixed(1)} FPS/%`}
-                  color={Colors.danger}
+                  sub={result.batteryDrain > 0 ? `${result.batteryEfficiency} FPS/%` : "No drain"}
+                  color={result.batteryDrain <= 2 ? Colors.success : result.batteryDrain <= 5 ? Colors.warning : Colors.danger}
                   icon="🔋"
                 />
-              )}
-            </View>
+              </View>
 
-            {/* Hardware context */}
-            {info && (
-              <GlassCard style={styles.hwCard} glowColor={Colors.border.default}>
-                <Text style={styles.cardLabel}>📱 Tested on</Text>
-                <Text style={styles.hwDevice}>{info.deviceName}</Text>
-                <Text style={styles.hwDetail}>{info.os} · {info.ramGB}GB RAM · {info.screenWidth}×{info.screenHeight}@{info.pixelRatio}x</Text>
-              </GlassCard>
-            )}
+              {/* Performance Timeline Chart */}
+              <FPSChart timeline={result.fpsTimeline} targetHz={result.detectedHz} />
+
+              {/* Hardware context */}
+              {info && (
+                <GlassCard style={styles.hwCard} glowColor={Colors.border.default}>
+                  <Text style={styles.cardLabel}>📱 Tested on</Text>
+                  <Text style={styles.hwDevice}>{info.deviceName}</Text>
+                  <Text style={styles.hwDetail}>
+                    {info.os} · {info.socName} ({info.cpuCores} Cores) · {info.ramGB}GB RAM · {info.screenWidth}×{info.screenHeight}@{info.pixelRatio}x
+                  </Text>
+                </GlassCard>
+              )}
+            </ViewShot>
 
             {/* Actions */}
             <View style={styles.actionRow}>
@@ -220,6 +296,13 @@ export default function BenchmarkScreen() {
                 style={styles.actionBtn}
               />
             </View>
+
+            <AnimatedButton
+              onPress={handleShare}
+              label="📤 Share Scorecard"
+              colors={['#10B981', '#059669']}
+              style={styles.shareBtn}
+            />
           </>
         )}
       </ScrollView>
@@ -243,11 +326,11 @@ function MetricCard({
 }
 
 const metricStyles = StyleSheet.create({
-  card: { flex: 1, alignItems: 'center', gap: 2 },
+  card: { width: '31%', alignItems: 'center', gap: 3, paddingVertical: 12, paddingHorizontal: 8 },
   icon: { fontSize: 20 },
-  value: { fontSize: FontSize.xl, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  label: { fontSize: FontSize.xs, color: Colors.text.secondary, fontWeight: '600' },
-  sub: { fontSize: 10, color: Colors.text.muted, textAlign: 'center' },
+  value: { fontSize: 22, fontWeight: '800', fontVariant: ['tabular-nums'], textAlign: 'center' },
+  label: { fontSize: 10, color: Colors.text.secondary, fontWeight: '700', textAlign: 'center', letterSpacing: 0.3 },
+  sub: { fontSize: 9, color: Colors.text.muted, textAlign: 'center', lineHeight: 12 },
 });
 
 const styles = StyleSheet.create({
@@ -317,11 +400,38 @@ const styles = StyleSheet.create({
   metricsGrid: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Spacing.sm,
+    gap: 8,
   },
   hwCard: { gap: 4 },
   hwDevice: { fontSize: FontSize.md, fontWeight: '700', color: Colors.text.primary },
   hwDetail: { fontSize: FontSize.xs, color: Colors.text.muted },
   actionRow: { flexDirection: 'row', gap: Spacing.sm },
   actionBtn: { flex: 1 },
+  shareBtn: { alignSelf: 'stretch', marginTop: Spacing.xs },
+  viewShotContainer: {
+    padding: Spacing.md,
+    backgroundColor: '#080b12',
+    borderRadius: BorderRadius.md,
+    gap: Spacing.md,
+  },
+  viewShotHeader: {
+    alignItems: 'center',
+    marginBottom: Spacing.xs,
+    paddingBottom: Spacing.sm,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(255,255,255,0.08)',
+  },
+  viewShotHeaderTitle: {
+    color: Colors.primary,
+    fontSize: FontSize.lg,
+    fontWeight: '900',
+    letterSpacing: 1,
+  },
+  viewShotHeaderSubtitle: {
+    color: Colors.text.muted,
+    fontSize: FontSize.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginTop: 2,
+  },
 });

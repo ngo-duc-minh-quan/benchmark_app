@@ -3,15 +3,11 @@
 // Connects to the Next.js backend (benchmark-tool) running on Vercel or local server
 
 import axios, { AxiosError } from 'axios';
+import * as FileSystem from 'expo-file-system';
 import { BenchmarkResult } from './scoreCalculator';
 import { HardwareInfo } from '../hooks/useHardwareInfo';
 
 // ─── Config ────────────────────────────────────────────────────────────────
-// Update BASE_URL khi deploy Next.js lên Vercel:
-//   1. Tạo file .env trong benchmarkx-app/
-//   2. Thêm: EXPO_PUBLIC_API_URL=https://your-app.vercel.app
-// Khi chạy local: Next.js phải đang chạy trên port 3000
-
 const BASE_URL =
   process.env.EXPO_PUBLIC_API_URL ??
   process.env.EXPO_PUBLIC_API_URL_LOCAL ??
@@ -54,12 +50,74 @@ export interface LeaderboardEntry {
   id: number;
   deviceName: string;
   os: string;
+  browser: string;
   avgFPS: number;
   onePercentLow: number;
   score: number;
   tier: string;
   batteryDrain: number;
   createdAt: string;
+}
+
+// ─── Offline Queue Functions ────────────────────────────────────────────────
+const OFFLINE_QUEUE_PATH = ((FileSystem as any).documentDirectory || '') + 'offline_queue.json';
+
+export async function getOfflineQueue(): Promise<SaveResultPayload[]> {
+  try {
+    const info = await FileSystem.getInfoAsync(OFFLINE_QUEUE_PATH);
+    if (!info.exists) return [];
+    const content = await FileSystem.readAsStringAsync(OFFLINE_QUEUE_PATH);
+    return JSON.parse(content) || [];
+  } catch (e) {
+    console.error('[OfflineQueue] Failed to read queue:', e);
+    return [];
+  }
+}
+
+export async function saveOfflineQueue(queue: SaveResultPayload[]): Promise<void> {
+  try {
+    await FileSystem.writeAsStringAsync(OFFLINE_QUEUE_PATH, JSON.stringify(queue));
+  } catch (e) {
+    console.error('[OfflineQueue] Failed to save queue:', e);
+  }
+}
+
+export async function addToOfflineQueue(payload: SaveResultPayload): Promise<void> {
+  try {
+    const queue = await getOfflineQueue();
+    queue.push(payload);
+    await saveOfflineQueue(queue);
+    console.log('[OfflineQueue] Added result to offline queue. Total in queue:', queue.length);
+  } catch (e) {
+    console.error('[OfflineQueue] Failed to add to queue:', e);
+  }
+}
+
+export async function syncOfflineQueue(): Promise<{ success: boolean; syncedCount: number }> {
+  try {
+    const queue = await getOfflineQueue();
+    if (queue.length === 0) return { success: true, syncedCount: 0 };
+
+    console.log('[OfflineQueue] Attempting to sync queue of size:', queue.length);
+    const remainingQueue: SaveResultPayload[] = [];
+    let syncedCount = 0;
+
+    for (const payload of queue) {
+      try {
+        await api.post('/api/results', payload);
+        syncedCount++;
+      } catch (err) {
+        console.error('[OfflineQueue] Sync failed for payload, keeping in queue:', err);
+        remainingQueue.push(payload);
+      }
+    }
+
+    await saveOfflineQueue(remainingQueue);
+    return { success: remainingQueue.length === 0, syncedCount };
+  } catch (e) {
+    console.error('[OfflineQueue] Sync process failed:', e);
+    return { success: false, syncedCount: 0 };
+  }
 }
 
 // ─── API Functions ──────────────────────────────────────────────────────────
@@ -70,26 +128,26 @@ export interface LeaderboardEntry {
 export async function saveResultToServer(
   result: BenchmarkResult,
   hardware: HardwareInfo,
-): Promise<{ success: boolean; id?: number; error?: string }> {
-  try {
-    const payload: SaveResultPayload = {
-      deviceName: hardware.deviceName,
-      os: hardware.os,
-      browser: `BenchmarkX Native (${hardware.os.includes('Android') ? 'Android' : 'iOS'})`,
-      cpuCores: hardware.cpuCores,
-      ramGB: hardware.ramGB,
-      gpuRenderer: hardware.gpuRenderer,
-      avgFPS: result.avgFPS,
-      minFPS: result.minFPS,
-      onePercentLow: result.onePercentLow,
-      cpuScore: result.cpuScore,
-      gpuScore: result.gpuScore,
-      score: result.score,
-      tier: result.tier,
-      batteryDrain: result.batteryDrain,
-      fpsTimeline: result.fpsTimeline,
-    };
+): Promise<{ success: boolean; id?: number; error?: string; isOffline?: boolean }> {
+  const payload: SaveResultPayload = {
+    deviceName: hardware.deviceName,
+    os: hardware.os,
+    browser: `BenchmarkX Native v2 (${hardware.os.includes('Android') ? 'Android' : 'iOS'}) (SC: ${result.singleCoreScore || 0}, MC: ${result.multiCoreScore || 0})`,
+    cpuCores: hardware.cpuCores,
+    ramGB: hardware.ramGB,
+    gpuRenderer: result.gpuRenderer || hardware.gpuRenderer,
+    avgFPS: result.avgFPS,
+    minFPS: result.minFPS,
+    onePercentLow: result.onePercentLow,
+    cpuScore: result.cpuScore,
+    gpuScore: result.gpuScore,
+    score: result.score,
+    tier: result.tier,
+    batteryDrain: result.batteryDrain,
+    fpsTimeline: result.fpsTimeline,
+  };
 
+  try {
     const response = await api.post<SaveResultResponse>('/api/results', payload);
     return { success: true, id: response.data.id };
   } catch (err) {
@@ -98,7 +156,10 @@ export async function saveResultToServer(
       error.response?.data?.error ??
       (error.code === 'ECONNABORTED' ? 'Server timeout (8s)' : 'Connection failed');
     console.error('[API] saveResult failed:', message);
-    return { success: false, error: message };
+    
+    // Save to offline queue
+    await addToOfflineQueue(payload);
+    return { success: false, error: message, isOffline: true };
   }
 }
 
