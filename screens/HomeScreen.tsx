@@ -133,8 +133,8 @@ export default function HomeScreen() {
           </LinearGradient>
 
           <Text style={styles.heroDesc}>
-            The most accurate mobile GPU/CPU benchmark.{'\n'}
-            No browser limits. No guessing. Real hardware data.
+            Native mobile performance benchmark for graphics, CPU,{'\n'}
+            frame stability and thermal performance.
           </Text>
         </Animated.View>
 

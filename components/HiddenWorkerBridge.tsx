@@ -37,10 +37,11 @@ export default function HiddenWorkerBridge({
             if (e.data.action === 'start') {
               const limit = 500000;
               const matrixSize = 100;
-              let ops = 0;
+              let workUnits = 0;
+              let checksum = 0;
               const endTime = Date.now() + e.data.duration;
 
-              // Sieve of Eratosthenes
+              // Sieve of Eratosthenes — 500k limit
               function primeSieve(lim) {
                 const sieve = new Uint8Array(lim + 1).fill(1);
                 sieve[0] = 0; sieve[1] = 0;
@@ -54,11 +55,15 @@ export default function HiddenWorkerBridge({
                 return count;
               }
 
-              // Matrix multiplication
+              // Deterministic Matrix multiplication
               function matMul(size) {
                 const a = new Float64Array(size * size);
                 const b = new Float64Array(size * size);
                 const c = new Float64Array(size * size);
+                for (let i = 0; i < size * size; i++) {
+                  a[i] = ((i * 17) % 100) / 100;
+                  b[i] = ((i * 31) % 100) / 100;
+                }
                 for (let i = 0; i < size; i++) {
                   for (let k = 0; k < size; k++) {
                     const aik = a[i * size + k];
@@ -69,12 +74,12 @@ export default function HiddenWorkerBridge({
               }
 
               while (Date.now() < endTime) {
-                primeSieve(limit);
-                matMul(matrixSize);
-                ops += 100;
+                checksum += primeSieve(limit);
+                checksum += matMul(matrixSize);
+                workUnits++;
               }
               
-              self.postMessage({ action: 'done', ops: ops });
+              self.postMessage({ action: 'done', ops: workUnits, checksum: checksum });
             }
           };
         \`;

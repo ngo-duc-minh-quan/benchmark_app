@@ -81,6 +81,8 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
   // FPS tracking — dùng performance.now() thay Date.now()
   const fpsArrayRef = useRef<number[]>([]);
   const fpsTimelineRef = useRef<{ t: number; fps: number }[]>([]);
+  const frameTimesRef = useRef<number[]>([]);
+  const lastFrameTsRef = useRef<number>(-1);
   const startPerfRef = useRef<number>(0);       // performance.now() lúc bắt đầu
   const lastSamplePerfRef = useRef<number>(0);  // performance.now() lúc lấy mẫu FPS gần nhất
   const frameCountRef = useRef<number>(0);
@@ -270,7 +272,8 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     let batteryDrain = 0;
     try {
       const currentLevel = await Battery.getBatteryLevelAsync();
-      batteryDrain = Math.max(0, startBatteryRef.current - Math.round(currentLevel * 100));
+      batteryDrain = Math.max(0, startBatteryRef.current - currentLevel * 100);
+      batteryDrain = Math.round(batteryDrain * 100) / 100;
     } catch { /* ignore */ }
 
     // Query real GPU renderer from GL context!
@@ -280,10 +283,9 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
       detectedGpu = gl.getParameter(gl.RENDERER) || detectedGpu;
     }
 
-    // Truyền detectedHz để score được normalize đúng:
-    // 60Hz device: avgFPS 60 = perfect; 120Hz device: avgFPS 120 = perfect
     const result = calculateScore(
       fpsArrayRef.current,
+      frameTimesRef.current,
       batteryDrain,
       cpuResultRef.current?.singleCore ?? 0,
       cpuResultRef.current?.multiCore ?? 0,
@@ -310,19 +312,30 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
     fpsArrayRef.current = [];
     fpsTimelineRef.current = [];
+    frameTimesRef.current = [];
     frameCountRef.current = 0;
     const testDurationMs = duration * 1000;
     // startPerfRef sẽ được set ở frame đầu tiên (ts callback)
     startPerfRef.current = -1;
     lastSamplePerfRef.current = -1;
+    lastFrameTsRef.current = -1;
 
     const loop = (ts: number) => {
       // Khởi tạo start time ở frame đầu tiên
       if (startPerfRef.current < 0) {
         startPerfRef.current = ts;
         lastSamplePerfRef.current = ts;
+        lastFrameTsRef.current = ts;
         animFrameRef.current = requestAnimationFrame(loop);
         return;
+      }
+
+      const frameTime = ts - lastFrameTsRef.current;
+      lastFrameTsRef.current = ts;
+
+      // Bỏ dữ liệu bất thường nếu app bị gián đoạn/background (frameTime >= 250ms)
+      if (frameTime > 0 && frameTime < 250) {
+        frameTimesRef.current.push(frameTime);
       }
 
       const elapsed = ts - startPerfRef.current;
@@ -418,6 +431,13 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     cpuResultRef.current = null;
     cancelAnimationFrame(animFrameRef.current);
 
+    try {
+      const level = await Battery.getBatteryLevelAsync();
+      startBatteryRef.current = level * 100;
+    } catch {
+      startBatteryRef.current = 100;
+    }
+
     // 1. Run Single-Core CPU Test (3s)
     const singleCoreRes = await runCPUBenchmark(3000);
 
@@ -432,13 +452,6 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
       singleCore: singleCoreRes.score,
       multiCore: finalMultiCoreScore,
     };
-
-    try {
-      const level = await Battery.getBatteryLevelAsync();
-      startBatteryRef.current = Math.round(level * 100);
-    } catch {
-      startBatteryRef.current = 100;
-    }
 
     setTestState('running');
     setTimeout(startLoop, 100);

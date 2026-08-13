@@ -1,15 +1,16 @@
 // lib/cpuBenchmark.ts
-// Native CPU benchmark — chạy thuật toán prime sieve trực tiếp trên JS thread
-// Trên Native, JS engine (Hermes/JSC) gần với native speed hơn web browser
+// Native CPU benchmark — chạy thuật toán prime sieve + matrix math trên JS thread
+// Khái niệm Work Unit: 1 Work Unit = 1x primeSieve(500,000) + 1x matMul(100)
+// Giúp Single-Core và Multi-Core hoàn toàn đồng nhất đơn vị công việc (workUnits)
 
 export interface CPUBenchmarkResult {
-  ops: number;   // number of primes found
+  ops: number;   // number of workUnits completed
   score: number; // 0-100 normalized
   durationMs: number;
 }
 
 /**
- * Sieve of Eratosthenes — tìm số nguyên tố đến N
+ * Sieve of Eratosthenes — tìm số nguyên tố đến N (500,000)
  */
 function primeSieve(limit: number): number {
   const sieve = new Uint8Array(limit + 1).fill(1);
@@ -33,11 +34,17 @@ function primeSieve(limit: number): number {
 
 /**
  * Matrix multiplication — test FPU + memory bandwidth
+ * Dùng dữ liệu deterministic (thay vì Math.random) để đếm phép tính ổn định
  */
 function matMul(size: number): number {
-  const a = new Float64Array(size * size).map(() => Math.random());
-  const b = new Float64Array(size * size).map(() => Math.random());
+  const a = new Float64Array(size * size);
+  const b = new Float64Array(size * size);
   const c = new Float64Array(size * size);
+
+  for (let i = 0; i < size * size; i++) {
+    a[i] = ((i * 17) % 100) / 100;
+    b[i] = ((i * 31) % 100) / 100;
+  }
 
   for (let i = 0; i < size; i++) {
     for (let k = 0; k < size; k++) {
@@ -47,28 +54,36 @@ function matMul(size: number): number {
       }
     }
   }
-  return c[0]; // prevent optimization
+  return c[0];
+}
+
+/**
+ * 1 Work Unit = 1x Prime Sieve + 1x Matrix Multiplication
+ */
+function runWorkUnit(): number {
+  const primes = primeSieve(500_000);
+  const matrix = matMul(100);
+  return primes + matrix;
 }
 
 /**
  * Normalize Single-Core CPU Score (0-100)
  */
-export function normalizeSingleCoreScore(ops: number, durationMs: number): number {
-  const opsPerSecond = ops / (durationMs / 1000);
-  // ~1,000,000 ops/sec = 100 score on flagship
-  const score = Math.min(100, (opsPerSecond / 1_000_000) * 100);
+export function normalizeSingleCoreScore(workUnits: number, durationMs: number): number {
+  const workUnitsPerSecond = workUnits / (durationMs / 1000);
+  // Benchmark baseline sẽ được calibrate thêm qua dữ liệu thực tế
+  const score = Math.min(100, (workUnitsPerSecond / 40) * 100);
   return Math.round(score * 10) / 10;
 }
 
 /**
  * Normalize Multi-Core CPU Score (0-100)
  */
-export function normalizeMultiCoreScore(ops: number, durationMs: number, cores: number): number {
-  const opsPerSecond = ops / (durationMs / 1000);
-  // ~1,000,000 ops/sec * cores * scalingFactor (e.g. 0.70x scaling) = 100 score on flagship
+export function normalizeMultiCoreScore(workUnits: number, durationMs: number, cores: number): number {
+  const workUnitsPerSecond = workUnits / (durationMs / 1000);
   const scalingFactor = Math.max(1, cores * 0.7);
-  const targetOpsPerSecond = 1_000_000 * scalingFactor;
-  const score = Math.min(100, (opsPerSecond / targetOpsPerSecond) * 100);
+  const targetWorkUnitsPerSecond = 40 * scalingFactor;
+  const score = Math.min(100, (workUnitsPerSecond / targetWorkUnitsPerSecond) * 100);
   return Math.round(score * 10) / 10;
 }
 
@@ -81,37 +96,39 @@ export function calculateCombinedCpuScore(singleCoreScore: number, multiCoreScor
 
 /**
  * Run Single-Core CPU benchmark for `durationMs` milliseconds
- * Returns normalized score 0-100
+ * Returns normalized score 0-100 & raw workUnits
  */
 export async function runCPUBenchmark(durationMs: number = 3000): Promise<CPUBenchmarkResult> {
   return new Promise((resolve) => {
     // Defer to next tick to allow UI to update
     setTimeout(() => {
-      const start = Date.now();
-      let totalOps = 0;
-      
-      // Phase 1: Prime Sieve (2 seconds)
-      const phase1End = start + durationMs * 0.6;
-      while (Date.now() < phase1End) {
-        totalOps += primeSieve(500_000);
+      const start = performance.now();
+      const end = start + durationMs;
+
+      let workUnits = 0;
+      let checksum = 0;
+
+      while (performance.now() < end) {
+        checksum += runWorkUnit();
+        workUnits++;
       }
 
-      // Phase 2: Matrix Multiplication (1 second)
-      const phase2End = start + durationMs;
-      let matResult = 0;
-      while (Date.now() < phase2End) {
-        matResult += matMul(100);
-        totalOps += 100;
-      }
-      
-      // Prevent dead code elimination
-      if (matResult === Infinity) console.log('unlikely');
+      const elapsed = performance.now() - start;
 
-      const elapsed = Date.now() - start;
-      const score = normalizeSingleCoreScore(totalOps, elapsed);
+      if (!Number.isFinite(checksum)) {
+        console.log('benchmark checksum:', checksum);
+      }
+
+      console.log({
+        workUnits,
+        elapsed,
+        workUnitsPerSecond: workUnits / (elapsed / 1000),
+      });
+
+      const score = normalizeSingleCoreScore(workUnits, elapsed);
 
       resolve({
-        ops: totalOps,
+        ops: workUnits,
         score,
         durationMs: elapsed,
       });

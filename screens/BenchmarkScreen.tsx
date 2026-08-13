@@ -212,12 +212,10 @@ Benchmark your device at BenchmarkX!`;
                   <View style={styles.hzLockRow}>
                     <Text style={styles.hzLockIcon}>🔒</Text>
                     <View style={styles.hzLockContent}>
-                      <Text style={styles.hzLockTitle}>60Hz Lock Detected</Text>
+                      <Text style={styles.hzLockTitle}>Possible 60Hz Cap Detected</Text>
                       <Text style={styles.hzLockDesc}>
-                        Màn hình {result.detectedHz}Hz của bạn đang bị Android tự động khóa FPS ở mức{' '}
-                        <Text style={{ color: '#FF9500', fontWeight: '700' }}>60Hz</Text> khi không
-                        có thao tác chạm (Adaptive Refresh Rate). Điểm số đã được tự động điều chỉnh
-                        theo hiệu suất thực tế để tính toán công bằng.
+                        BenchmarkX detected frame pacing consistent with a possible 60Hz system cap.
+                        This does not affect your performance score.
                       </Text>
                       <Text style={styles.hzLockTip}>
                         💡 Bật <Text style={{ fontWeight: '700' }}>"Force peak refresh rate"</Text> trong
@@ -238,7 +236,7 @@ Benchmark your device at BenchmarkX!`;
                   icon="🎮"
                 />
                 <MetricCard
-                  label="GPU Score"
+                  label="Graphics Score"
                   value={`${result.gpuScore}`}
                   sub="/ 100"
                   color={Colors.secondary}
@@ -286,7 +284,7 @@ Benchmark your device at BenchmarkX!`;
                 <MetricCard
                   label="Battery Drain"
                   value={`${result.batteryDrain}%`}
-                  sub={result.batteryDrain > 0 ? `${result.batteryEfficiency} FPS/%` : "No drain"}
+                  sub={result.batteryDrain > 0 ? `${result.batteryEfficiency} FPS/%` : "Battery change <1%"}
                   color={result.batteryDrain <= 2 ? Colors.success : result.batteryDrain <= 5 ? Colors.warning : Colors.danger}
                   icon="🔋"
                 />
