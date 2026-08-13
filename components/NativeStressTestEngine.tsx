@@ -31,10 +31,12 @@ interface Props {
 export default function NativeStressTestEngine({ onComplete, duration = 60 }: Props) {
   const { info: hwInfo } = useHardwareInfo();
   const [multiCoreConfig, setMultiCoreConfig] = useState<{ cores: number; durationMs: number } | null>(null);
+  const multiCoreConfigRef = useRef<{ cores: number; durationMs: number } | null>(null);
   const multiCoreResolveRef = useRef<((res: { ops: number; elapsedMs: number }) => void) | null>(null);
 
   const handleMultiCoreComplete = useCallback((ops: number, elapsedMs: number) => {
     setMultiCoreConfig(null);
+    multiCoreConfigRef.current = null;
     if (multiCoreResolveRef.current) {
       multiCoreResolveRef.current({ ops, elapsedMs });
       multiCoreResolveRef.current = null;
@@ -43,9 +45,11 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
   const handleMultiCoreError = useCallback((err: string) => {
     console.warn('[StressTestEngine] Multi-core error:', err);
+    const durationMs = multiCoreConfigRef.current?.durationMs ?? 3000;
     setMultiCoreConfig(null);
+    multiCoreConfigRef.current = null;
     if (multiCoreResolveRef.current) {
-      multiCoreResolveRef.current({ ops: 0, elapsedMs: 3000 }); // fallback
+      multiCoreResolveRef.current({ ops: 0, elapsedMs: durationMs });
       multiCoreResolveRef.current = null;
     }
   }, []);
@@ -53,7 +57,9 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
   const runMultiCoreTest = useCallback((cores: number, durationMs: number): Promise<{ ops: number; elapsedMs: number }> => {
     return new Promise((resolve) => {
       multiCoreResolveRef.current = resolve;
-      setMultiCoreConfig({ cores, durationMs });
+      const config = { cores, durationMs };
+      multiCoreConfigRef.current = config;
+      setMultiCoreConfig(config);
     });
   }, []);
 
