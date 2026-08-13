@@ -1,5 +1,5 @@
 // components/HiddenWorkerBridge.tsx
-// Spawns native multi-threaded Web Workers inside a hidden WebView to test multi-core CPU performance.
+// Runs multi-core JavaScript workload using Web Workers inside a hidden WebView.
 // Completely self-contained to avoid local asset load issues on Android.
 
 import React, { useEffect, useRef } from 'react';

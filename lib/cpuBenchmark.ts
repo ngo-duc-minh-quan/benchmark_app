@@ -67,12 +67,17 @@ function runWorkUnit(): number {
 }
 
 /**
+ * Provisional baseline (workUnits/sec) pending real device empirical calibration.
+ * Temporary baseline pending multi-device benchmark data collection.
+ */
+export const PROVISIONAL_SINGLE_CORE_BASELINE = 40;
+
+/**
  * Normalize Single-Core CPU Score (0-100)
  */
 export function normalizeSingleCoreScore(workUnits: number, durationMs: number): number {
   const workUnitsPerSecond = workUnits / (durationMs / 1000);
-  // Benchmark baseline sẽ được calibrate thêm qua dữ liệu thực tế
-  const score = Math.min(100, (workUnitsPerSecond / 40) * 100);
+  const score = Math.min(100, (workUnitsPerSecond / PROVISIONAL_SINGLE_CORE_BASELINE) * 100);
   return Math.round(score * 10) / 10;
 }
 
@@ -82,7 +87,7 @@ export function normalizeSingleCoreScore(workUnits: number, durationMs: number):
 export function normalizeMultiCoreScore(workUnits: number, durationMs: number, cores: number): number {
   const workUnitsPerSecond = workUnits / (durationMs / 1000);
   const scalingFactor = Math.max(1, cores * 0.7);
-  const targetWorkUnitsPerSecond = 40 * scalingFactor;
+  const targetWorkUnitsPerSecond = PROVISIONAL_SINGLE_CORE_BASELINE * scalingFactor;
   const score = Math.min(100, (workUnitsPerSecond / targetWorkUnitsPerSecond) * 100);
   return Math.round(score * 10) / 10;
 }

@@ -265,12 +265,12 @@ Benchmark your device at BenchmarkX!`;
                 />
                 <MetricCard
                   label="Display"
-                  value={result.is60HzLocked
-                    ? `${result.effectiveTargetHz}Hz`
-                    : `${result.detectedHz}Hz`}
-                  sub={result.is60HzLocked
-                    ? `locked (${result.detectedHz}Hz panel)`
-                    : 'detected refresh'}
+                  value={`${result.detectedHz}Hz`}
+                  sub={
+                    result.is60HzLocked
+                      ? 'possible 60Hz cap observed'
+                      : 'detected refresh'
+                  }
                   color={result.is60HzLocked ? '#FF9500' : (result.detectedHz >= 90 ? Colors.primary : Colors.warning)}
                   icon={result.is60HzLocked ? '🔒' : '📺'}
                 />
@@ -283,8 +283,18 @@ Benchmark your device at BenchmarkX!`;
                 />
                 <MetricCard
                   label="Battery Drain"
-                  value={`${result.batteryDrain}%`}
-                  sub={result.batteryDrain > 0 ? `${result.batteryEfficiency} FPS/%` : "Battery change <1%"}
+                  value={
+                    result.batteryDrain > 0 && result.batteryDrain < 1
+                      ? '<1%'
+                      : `${result.batteryDrain}%`
+                  }
+                  sub={
+                    result.batteryDrain > 0 && result.batteryDrain < 1
+                      ? 'below reliable resolution'
+                      : result.batteryDrain > 0
+                        ? `${result.batteryEfficiency} FPS/%`
+                        : 'no measurable change'
+                  }
                   color={result.batteryDrain <= 2 ? Colors.success : result.batteryDrain <= 5 ? Colors.warning : Colors.danger}
                   icon="🔋"
                 />
