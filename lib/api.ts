@@ -39,6 +39,10 @@ export interface SaveResultPayload {
   tier: 'S' | 'A' | 'B' | 'C';
   batteryDrain: number;
   fpsTimeline: { t: number; fps: number }[];
+  /** true nếu bị Android Adaptive Refresh Rate khóa FPS ở 60Hz */
+  is60HzLocked?: boolean;
+  /** Tần số quét thực tế dùng để tính điểm */
+  effectiveTargetHz?: number;
 }
 
 export interface SaveResultResponse {
@@ -145,6 +149,8 @@ export async function saveResultToServer(
     tier: result.tier,
     batteryDrain: result.batteryDrain,
     fpsTimeline: result.fpsTimeline,
+    is60HzLocked: result.is60HzLocked,
+    effectiveTargetHz: result.effectiveTargetHz,
   };
 
   try {

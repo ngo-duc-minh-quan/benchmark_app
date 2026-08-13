@@ -206,6 +206,28 @@ Benchmark your device at BenchmarkX!`;
                 </View>
               </GlassCard>
 
+              {/* 60Hz Lock Banner — hiển thị khi Android Adaptive Refresh Rate khóa FPS */}
+              {result.is60HzLocked && (
+                <GlassCard style={styles.hzLockBanner} glowColor="#FF9500">
+                  <View style={styles.hzLockRow}>
+                    <Text style={styles.hzLockIcon}>🔒</Text>
+                    <View style={styles.hzLockContent}>
+                      <Text style={styles.hzLockTitle}>60Hz Lock Detected</Text>
+                      <Text style={styles.hzLockDesc}>
+                        Màn hình {result.detectedHz}Hz của bạn đang bị Android tự động khóa FPS ở mức{' '}
+                        <Text style={{ color: '#FF9500', fontWeight: '700' }}>60Hz</Text> khi không
+                        có thao tác chạm (Adaptive Refresh Rate). Điểm số đã được tự động điều chỉnh
+                        theo hiệu suất thực tế để tính toán công bằng.
+                      </Text>
+                      <Text style={styles.hzLockTip}>
+                        💡 Bật <Text style={{ fontWeight: '700' }}>"Force peak refresh rate"</Text> trong
+                        Tuỳ chọn nhà phát triển để mở khoá và đo chính xác hơn.
+                      </Text>
+                    </View>
+                  </View>
+                </GlassCard>
+              )}
+
               {/* Metrics grid */}
               <View style={styles.metricsGrid}>
                 <MetricCard
@@ -245,10 +267,14 @@ Benchmark your device at BenchmarkX!`;
                 />
                 <MetricCard
                   label="Display"
-                  value={`${result.detectedHz}Hz`}
-                  sub="detected refresh"
-                  color={result.detectedHz >= 90 ? Colors.primary : Colors.warning}
-                  icon="📺"
+                  value={result.is60HzLocked
+                    ? `${result.effectiveTargetHz}Hz`
+                    : `${result.detectedHz}Hz`}
+                  sub={result.is60HzLocked
+                    ? `locked (${result.detectedHz}Hz panel)`
+                    : 'detected refresh'}
+                  color={result.is60HzLocked ? '#FF9500' : (result.detectedHz >= 90 ? Colors.primary : Colors.warning)}
+                  icon={result.is60HzLocked ? '🔒' : '📺'}
                 />
                 <MetricCard
                   label="Thermal Retention"
@@ -376,6 +402,43 @@ const styles = StyleSheet.create({
   durationBtnText: { color: Colors.text.secondary, fontWeight: '600', fontSize: FontSize.md },
   durationBtnTextActive: { color: Colors.primary },
   tierCard: {},
+  hzLockBanner: {
+    borderColor: '#FF950044',
+    backgroundColor: 'rgba(255,149,0,0.06)',
+  },
+  hzLockRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: Spacing.sm,
+  },
+  hzLockIcon: {
+    fontSize: 22,
+    marginTop: 2,
+  },
+  hzLockContent: {
+    flex: 1,
+    gap: 4,
+  },
+  hzLockTitle: {
+    fontSize: FontSize.sm,
+    fontWeight: '700',
+    color: '#FF9500',
+    letterSpacing: 0.3,
+  },
+  hzLockDesc: {
+    fontSize: FontSize.xs,
+    color: Colors.text.secondary,
+    lineHeight: 16,
+  },
+  hzLockTip: {
+    fontSize: FontSize.xs,
+    color: Colors.text.muted,
+    lineHeight: 15,
+    marginTop: 2,
+    paddingTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: 'rgba(255,149,0,0.2)',
+  },
   tierHeader: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   tierBadge: {
     width: 56,
