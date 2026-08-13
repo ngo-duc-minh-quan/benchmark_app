@@ -16,8 +16,10 @@ export interface HardwareInfo {
   deviceName: string;
   os: string;
   cpuCores: number;
+  cpuCoresEstimated: boolean;
   ramGB: number;
   freeRAMGB: number;
+  freeRAMEstimated: boolean;
   socName: string;
   gpuRenderer: string;
   batteryLevel: number;
@@ -71,7 +73,7 @@ function mapSoCName(rawSoc: string, deviceModel: string): string {
 }
 
 // ─── RAM & CPU Info via /proc ──────────────────────────────────────────────
-async function getRAMInfo(): Promise<{ totalGB: number; freeGB: number }> {
+async function getRAMInfo(): Promise<{ totalGB: number; freeGB: number; freeRAMEstimated: boolean }> {
   // 1. Lấy dung lượng RAM vật lý thực tế từ Device.totalMemory (hoạt động tốt trên cả Android & iOS)
   let totalGB = 8;
   if (Device.totalMemory) {
@@ -92,7 +94,7 @@ async function getRAMInfo(): Promise<{ totalGB: number; freeGB: number }> {
         const cachedKb = cachedMatch ? parseInt(cachedMatch[1], 10) : 0;
         const availableKb = freeKb + buffersKb + cachedKb;
         const freeGB = Math.round((availableKb / (1024 * 1024)) * 10) / 10;
-        return { totalGB, freeGB: Math.min(totalGB, freeGB) };
+        return { totalGB, freeGB: Math.min(totalGB, freeGB), freeRAMEstimated: false };
       }
     } catch {
       // Bị chặn quyền đọc /proc trên một số phiên bản Android mới (Android 14+)
@@ -101,12 +103,13 @@ async function getRAMInfo(): Promise<{ totalGB: number; freeGB: number }> {
 
   // Ước lượng RAM trống khoảng 45% nếu không đọc được /proc/meminfo
   const freeGB = Math.round(totalGB * 0.45 * 10) / 10;
-  return { totalGB, freeGB };
+  return { totalGB, freeGB, freeRAMEstimated: true };
 }
 
-async function getAndroidCPUInfo(): Promise<{ cores: number; soc: string }> {
+async function getAndroidCPUInfo(): Promise<{ cores: number; soc: string; cpuCoresEstimated: boolean }> {
   let cores = 8;
   let soc = '';
+  let cpuCoresEstimated = true;
 
   if (Platform.OS === 'android') {
     try {
@@ -116,6 +119,7 @@ async function getAndroidCPUInfo(): Promise<{ cores: number; soc: string }> {
       const matches = cpuinfo.match(/^processor\s*:/gm);
       if (matches && matches.length > 0) {
         cores = matches.length;
+        cpuCoresEstimated = false;
       }
 
       // Try finding hardware line
@@ -130,14 +134,15 @@ async function getAndroidCPUInfo(): Promise<{ cores: number; soc: string }> {
         } catch {}
       }
     } catch {
-      // Fallback
+      cpuCoresEstimated = true;
     }
   } else {
     // iOS
     cores = 6;
+    cpuCoresEstimated = false;
   }
 
-  return { cores, soc: mapSoCName(soc, Device.modelName ?? '') };
+  return { cores, soc: mapSoCName(soc, Device.modelName ?? ''), cpuCoresEstimated };
 }
 
 // ─── Device name ────────────────────────────────────────────────────────────
@@ -180,10 +185,10 @@ export function useHardwareInfo() {
         const os = buildOSString();
 
         // Total/Free RAM
-        const { totalGB, freeGB } = await getRAMInfo();
+        const { totalGB, freeGB, freeRAMEstimated } = await getRAMInfo();
 
         // CPU cores & SoC Name
-        const { cores, soc } = await getAndroidCPUInfo();
+        const { cores, soc, cpuCoresEstimated } = await getAndroidCPUInfo();
 
         // Battery
         let batteryLevel = 100;
@@ -211,8 +216,10 @@ export function useHardwareInfo() {
           deviceName,
           os,
           cpuCores: cores,
+          cpuCoresEstimated,
           ramGB: totalGB,
           freeRAMGB: freeGB,
+          freeRAMEstimated,
           socName: soc,
           gpuRenderer: Platform.OS === 'android' ? 'Adreno / Mali GPU' : 'Apple GPU',
           batteryLevel,
@@ -229,8 +236,10 @@ export function useHardwareInfo() {
           deviceName: 'Unknown Device',
           os: Platform.OS === 'android' ? 'Android' : 'iOS',
           cpuCores: Platform.OS === 'android' ? 8 : 6,
+          cpuCoresEstimated: true,
           ramGB: 8,
           freeRAMGB: 3.5,
+          freeRAMEstimated: true,
           socName: Platform.OS === 'android' ? 'ARM Processor' : 'Apple Silicon',
           gpuRenderer: 'OpenGL ES',
           batteryLevel: 100,

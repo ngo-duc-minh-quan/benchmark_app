@@ -24,6 +24,7 @@ const api = axios.create({
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 export interface SaveResultPayload {
+  clientResultId: string;
   deviceName: string;
   os: string;
   browser: string;       // "BenchmarkX Native Android" hoặc "BenchmarkX Native iOS"
@@ -43,6 +44,8 @@ export interface SaveResultPayload {
   is60HzLocked?: boolean;
   /** Tần số quét thực tế dùng để tính điểm */
   effectiveTargetHz?: number;
+  singleCoreWorkUnitsPerSec?: number;
+  multiCoreWorkUnitsPerSec?: number;
 }
 
 export interface SaveResultResponse {
@@ -61,6 +64,12 @@ export interface LeaderboardEntry {
   tier: string;
   batteryDrain: number;
   createdAt: string;
+}
+
+export interface LeaderboardResponse {
+  success: boolean;
+  entries: LeaderboardEntry[];
+  error?: string;
 }
 
 // ─── Offline Queue Functions ────────────────────────────────────────────────
@@ -89,9 +98,13 @@ export async function saveOfflineQueue(queue: SaveResultPayload[]): Promise<void
 export async function addToOfflineQueue(payload: SaveResultPayload): Promise<void> {
   try {
     const queue = await getOfflineQueue();
-    queue.push(payload);
-    await saveOfflineQueue(queue);
-    console.log('[OfflineQueue] Added result to offline queue. Total in queue:', queue.length);
+    // Avoid duplicate payload in queue by clientResultId
+    const exists = queue.some(p => p.clientResultId === payload.clientResultId);
+    if (!exists) {
+      queue.push(payload);
+      await saveOfflineQueue(queue);
+      console.log('[OfflineQueue] Added result to offline queue. Total in queue:', queue.length);
+    }
   } catch (e) {
     console.error('[OfflineQueue] Failed to add to queue:', e);
   }
@@ -134,6 +147,7 @@ export async function saveResultToServer(
   hardware: HardwareInfo,
 ): Promise<{ success: boolean; id?: number; error?: string; isOffline?: boolean }> {
   const payload: SaveResultPayload = {
+    clientResultId: result.clientResultId,
     deviceName: hardware.deviceName,
     os: hardware.os,
     browser: `BenchmarkX Native v2 (${hardware.os.includes('Android') ? 'Android' : 'iOS'}) (SC: ${result.singleCoreScore || 0}, MC: ${result.multiCoreScore || 0})`,
@@ -151,6 +165,8 @@ export async function saveResultToServer(
     fpsTimeline: result.fpsTimeline,
     is60HzLocked: result.is60HzLocked,
     effectiveTargetHz: result.effectiveTargetHz,
+    singleCoreWorkUnitsPerSec: result.singleCoreWorkUnitsPerSec,
+    multiCoreWorkUnitsPerSec: result.multiCoreWorkUnitsPerSec,
   };
 
   try {
@@ -172,13 +188,21 @@ export async function saveResultToServer(
 /**
  * GET /api/results — Lấy top 50 kết quả từ server (live leaderboard)
  */
-export async function fetchLeaderboard(): Promise<LeaderboardEntry[]> {
+export async function fetchLeaderboard(): Promise<LeaderboardResponse> {
   try {
     const response = await api.get<{ results: LeaderboardEntry[] }>('/api/results');
-    return response.data.results ?? [];
+    return {
+      success: true,
+      entries: response.data.results ?? [],
+    };
   } catch (err) {
+    const error = err as AxiosError<{ error: string }>;
     console.error('[API] fetchLeaderboard failed:', err);
-    return []; // fallback to local baselines
+    return {
+      success: false,
+      entries: [],
+      error: error.message || 'Failed to connect to server',
+    };
   }
 }
 

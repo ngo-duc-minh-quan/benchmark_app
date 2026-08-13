@@ -31,12 +31,12 @@ interface Props {
 export default function NativeStressTestEngine({ onComplete, duration = 60 }: Props) {
   const { info: hwInfo } = useHardwareInfo();
   const [isMeasuringMultiCore, setIsMeasuringMultiCore] = useState(false);
-  const multiCoreResolveRef = useRef<((ops: number) => void) | null>(null);
+  const multiCoreResolveRef = useRef<((res: { ops: number; elapsedMs: number }) => void) | null>(null);
 
-  const handleMultiCoreComplete = useCallback((ops: number) => {
+  const handleMultiCoreComplete = useCallback((ops: number, elapsedMs: number) => {
     setIsMeasuringMultiCore(false);
     if (multiCoreResolveRef.current) {
-      multiCoreResolveRef.current(ops);
+      multiCoreResolveRef.current({ ops, elapsedMs });
       multiCoreResolveRef.current = null;
     }
   }, []);
@@ -45,12 +45,12 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
     console.warn('[StressTestEngine] Multi-core error:', err);
     setIsMeasuringMultiCore(false);
     if (multiCoreResolveRef.current) {
-      multiCoreResolveRef.current(0); // fallback
+      multiCoreResolveRef.current({ ops: 0, elapsedMs: 3000 }); // fallback
       multiCoreResolveRef.current = null;
     }
   }, []);
 
-  const runMultiCoreTest = useCallback((cores: number, durationMs: number): Promise<number> => {
+  const runMultiCoreTest = useCallback((cores: number, durationMs: number): Promise<{ ops: number; elapsedMs: number }> => {
     return new Promise((resolve) => {
       multiCoreResolveRef.current = resolve;
       setIsMeasuringMultiCore(true);
@@ -87,7 +87,13 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
   const lastSamplePerfRef = useRef<number>(0);  // performance.now() lúc lấy mẫu FPS gần nhất
   const frameCountRef = useRef<number>(0);
   const startBatteryRef = useRef<number>(100);
-  const cpuResultRef = useRef<{ singleCore: number; multiCore: number } | null>(null);
+  const cpuResultRef = useRef<{
+    singleCore: number;
+    multiCore: number;
+    singleCoreWorkUnitsPerSec: number;
+    multiCoreWorkUnitsPerSec: number;
+    cpuCoresUsed: number;
+  } | null>(null);
   const detectedHzRef = useRef<number>(60);
 
   const [testState, setTestState] = useState<TestState>('idle');
@@ -290,6 +296,9 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
       cpuResultRef.current?.singleCore ?? 0,
       cpuResultRef.current?.multiCore ?? 0,
       detectedHzRef.current,  // targetHz = device max refresh rate
+      cpuResultRef.current?.singleCoreWorkUnitsPerSec ?? 0,
+      cpuResultRef.current?.multiCoreWorkUnitsPerSec ?? 0,
+      cpuResultRef.current?.cpuCoresUsed ?? 0,
     );
 
     onComplete({
@@ -440,17 +449,22 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
     // 1. Run Single-Core CPU Test (3s)
     const singleCoreRes = await runCPUBenchmark(3000);
+    const singleCoreWups = singleCoreRes.ops / (singleCoreRes.durationMs / 1000);
 
     // 2. Run Multi-Core CPU Test (3s) via hidden WebView workers
     const cores = hwInfo?.cpuCores ?? (Platform.OS === 'android' ? 8 : 6);
-    const multiCoreOps = await runMultiCoreTest(cores, 3000);
-    const finalMultiCoreScore = multiCoreOps > 0
-      ? normalizeMultiCoreScore(multiCoreOps, 3000, cores)
+    const multiCoreRes = await runMultiCoreTest(cores, 3000);
+    const multiCoreWups = multiCoreRes.ops > 0 ? multiCoreRes.ops / (multiCoreRes.elapsedMs / 1000) : 0;
+    const finalMultiCoreScore = multiCoreRes.ops > 0
+      ? normalizeMultiCoreScore(multiCoreRes.ops, multiCoreRes.elapsedMs, cores)
       : singleCoreRes.score;
 
     cpuResultRef.current = {
       singleCore: singleCoreRes.score,
       multiCore: finalMultiCoreScore,
+      singleCoreWorkUnitsPerSec: singleCoreWups,
+      multiCoreWorkUnitsPerSec: multiCoreWups,
+      cpuCoresUsed: cores,
     };
 
     setTestState('running');

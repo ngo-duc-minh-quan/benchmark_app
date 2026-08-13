@@ -1,6 +1,7 @@
 import { calculateCombinedCpuScore } from './cpuBenchmark';
 
 export interface BenchmarkResult {
+  clientResultId: string;
   avgFPS: number;
   minFPS: number;
   onePercentLow: number;
@@ -22,6 +23,9 @@ export interface BenchmarkResult {
   retention: number;
   singleCoreScore?: number;
   multiCoreScore?: number;
+  singleCoreWorkUnitsPerSec?: number;
+  multiCoreWorkUnitsPerSec?: number;
+  cpuCoresUsed?: number;
 }
 
 /**
@@ -54,13 +58,16 @@ export function calculateScore(
   singleCoreScore: number = 0,
   multiCoreScore: number = 0,
   targetHz: number = 120,
-): Omit<BenchmarkResult, 'fpsTimeline' | 'duration' | 'detectedHz'> & {
-  fpsTimeline: { t: number; fps: number }[];
-  duration: number;
-  detectedHz: number;
-} {
+  singleCoreWups: number = 0,
+  multiCoreWups: number = 0,
+  cpuCoresUsed: number = 0,
+  clientResultId?: string,
+): BenchmarkResult {
+  const resultId = clientResultId ?? `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
   if (fpsArray.length === 0 && frameTimesMs.length === 0) {
     return {
+      clientResultId: resultId,
       avgFPS: 0, minFPS: 0, onePercentLow: 0, stability: 0,
       cpuScore: 0, gpuScore: 0, score: 0, tier: 'C',
       batteryDrain: 0, batteryEfficiency: 0,
@@ -70,6 +77,9 @@ export function calculateScore(
       retention: 100,
       singleCoreScore: 0,
       multiCoreScore: 0,
+      singleCoreWorkUnitsPerSec: 0,
+      multiCoreWorkUnitsPerSec: 0,
+      cpuCoresUsed: 0,
     };
   }
 
@@ -174,6 +184,7 @@ export function calculateScore(
   const tier = classifyTier(totalScore);
 
   return {
+    clientResultId: resultId,
     avgFPS: r(avg), minFPS: r(minFPS), onePercentLow: r(onePercentLow),
     stability: r(stability), cpuScore: r(finalCpuScore), gpuScore: r(gpuScore),
     score: r(totalScore), tier, batteryDrain,
@@ -184,6 +195,9 @@ export function calculateScore(
     retention: r(retention),
     singleCoreScore: r(singleCoreScore),
     multiCoreScore: r(multiCoreScore),
+    singleCoreWorkUnitsPerSec: r(singleCoreWups),
+    multiCoreWorkUnitsPerSec: r(multiCoreWups),
+    cpuCoresUsed,
   };
 }
 

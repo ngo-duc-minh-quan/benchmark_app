@@ -149,7 +149,11 @@ export default function HomeScreen() {
               </Text>
 
               <View style={styles.deviceGrid}>
-                <DeviceStat icon="🧠" label="RAM" value={`${info.freeRAMGB}G / ${info.ramGB}G`} />
+                <DeviceStat
+                  icon="🧠"
+                  label="RAM"
+                  value={info.freeRAMEstimated ? `~${info.freeRAMGB}G / ${info.ramGB}G` : `${info.freeRAMGB}G / ${info.ramGB}G`}
+                />
                 <DeviceStat icon="🖥" label="Screen" value={`${info.screenWidth}×${info.screenHeight}`} />
                 <DeviceStat
                   icon="🔋"

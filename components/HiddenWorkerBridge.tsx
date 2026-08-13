@@ -9,7 +9,7 @@ import { WebView } from 'react-native-webview';
 interface Props {
   cpuCores: number;
   durationMs?: number;
-  onComplete: (ops: number) => void;
+  onComplete: (ops: number, elapsedMs: number) => void;
   onError: (error: string) => void;
 }
 
@@ -39,6 +39,7 @@ export default function HiddenWorkerBridge({
               const matrixSize = 100;
               let workUnits = 0;
               let checksum = 0;
+              const startedAt = performance.now();
               const endTime = Date.now() + e.data.duration;
 
               // Sieve of Eratosthenes — 500k limit
@@ -79,7 +80,8 @@ export default function HiddenWorkerBridge({
                 workUnits++;
               }
               
-              self.postMessage({ action: 'done', ops: workUnits, checksum: checksum });
+              const elapsedMs = performance.now() - startedAt;
+              self.postMessage({ action: 'done', ops: workUnits, elapsedMs: elapsedMs, checksum: checksum });
             }
           };
         \`;
@@ -91,19 +93,22 @@ export default function HiddenWorkerBridge({
           const workers = [];
           let finished = 0;
           let totalOps = 0;
+          let maxElapsedMs = 0;
 
           for (let i = 0; i < cores; i++) {
             const worker = new Worker(workerUrl);
             worker.onmessage = function(e) {
               if (e.data.action === 'done') {
                 totalOps += e.data.ops;
+                if (e.data.elapsedMs > maxElapsedMs) maxElapsedMs = e.data.elapsedMs;
                 finished++;
                 worker.terminate();
 
                 if (finished === cores) {
                   window.ReactNativeWebView.postMessage(JSON.stringify({
                     status: 'success',
-                    ops: totalOps
+                    ops: totalOps,
+                    elapsedMs: maxElapsedMs || duration
                   }));
                 }
               }
@@ -145,7 +150,7 @@ export default function HiddenWorkerBridge({
     try {
       const data = JSON.parse(event.nativeEvent.data);
       if (data.status === 'success') {
-        onComplete(data.ops);
+        onComplete(data.ops, data.elapsedMs || durationMs);
       } else {
         onError(data.error || 'Worker execution failed');
       }

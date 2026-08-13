@@ -55,9 +55,9 @@ export default function CompareScreen() {
       if (syncedCount > 0) {
         console.log(`[OfflineSync] Synced ${syncedCount} queued benchmark results.`);
       }
-      fetchLeaderboard().then(entries => {
-        setLiveEntries(entries);
-        setIsOnline(entries.length > 0);
+      fetchLeaderboard().then(res => {
+        setIsOnline(res.success);
+        setLiveEntries(res.entries);
       });
     });
   }, []);
