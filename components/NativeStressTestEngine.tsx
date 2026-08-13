@@ -30,11 +30,11 @@ interface Props {
 
 export default function NativeStressTestEngine({ onComplete, duration = 60 }: Props) {
   const { info: hwInfo } = useHardwareInfo();
-  const [isMeasuringMultiCore, setIsMeasuringMultiCore] = useState(false);
+  const [multiCoreConfig, setMultiCoreConfig] = useState<{ cores: number; durationMs: number } | null>(null);
   const multiCoreResolveRef = useRef<((res: { ops: number; elapsedMs: number }) => void) | null>(null);
 
   const handleMultiCoreComplete = useCallback((ops: number, elapsedMs: number) => {
-    setIsMeasuringMultiCore(false);
+    setMultiCoreConfig(null);
     if (multiCoreResolveRef.current) {
       multiCoreResolveRef.current({ ops, elapsedMs });
       multiCoreResolveRef.current = null;
@@ -43,7 +43,7 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
   const handleMultiCoreError = useCallback((err: string) => {
     console.warn('[StressTestEngine] Multi-core error:', err);
-    setIsMeasuringMultiCore(false);
+    setMultiCoreConfig(null);
     if (multiCoreResolveRef.current) {
       multiCoreResolveRef.current({ ops: 0, elapsedMs: 3000 }); // fallback
       multiCoreResolveRef.current = null;
@@ -53,7 +53,7 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
   const runMultiCoreTest = useCallback((cores: number, durationMs: number): Promise<{ ops: number; elapsedMs: number }> => {
     return new Promise((resolve) => {
       multiCoreResolveRef.current = resolve;
-      setIsMeasuringMultiCore(true);
+      setMultiCoreConfig({ cores, durationMs });
     });
   }, []);
 
@@ -493,10 +493,10 @@ export default function NativeStressTestEngine({ onComplete, duration = 60 }: Pr
 
   return (
     <View style={styles.container}>
-      {isMeasuringMultiCore && (
+      {multiCoreConfig && (
         <HiddenWorkerBridge
-          cpuCores={hwInfo?.cpuCores ?? (Platform.OS === 'android' ? 8 : 6)}
-          durationMs={3000}
+          cpuCores={multiCoreConfig.cores}
+          durationMs={multiCoreConfig.durationMs}
           onComplete={handleMultiCoreComplete}
           onError={handleMultiCoreError}
         />

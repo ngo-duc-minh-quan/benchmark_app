@@ -145,7 +145,7 @@ export default function HomeScreen() {
               <Text style={styles.sectionLabel}>📱 Your Device</Text>
               <Text style={styles.deviceName}>{info.deviceName}</Text>
               <Text style={styles.deviceOS}>
-                {info.os} · {info.socName} ({info.cpuCores} Cores)
+                {info.os} · {info.socName} {info.cpuCoresEstimated ? `(~${info.cpuCores} Cores)` : `(${info.cpuCores} Cores)`}
               </Text>
 
               <View style={styles.deviceGrid}>

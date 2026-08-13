@@ -1,5 +1,6 @@
 // lib/benchmarkBaselines.ts
-// Baseline device data — same device list as web version, compatible với CompareScreen
+// Reference Devices — illustrative data (Pre-calibration v2.0 Baselines)
+// Note: These static baselines represent illustrative scores pending empirical device calibration with v2.1 methodology.
 
 export interface DeviceBaseline {
   id: string;
