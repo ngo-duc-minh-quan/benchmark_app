@@ -53,7 +53,8 @@ Trong đó:
 
 ---
 
-## 3. Trạng Thái Kiểm Thử (Verification Status)
+## 3. Trạng Thái Kiểm Thử (Verification & CI Status)
 
-- **TypeScript Typecheck (`npx tsc --noEmit`)**: PASS (0 errors)
+- **Local Typecheck (`npm run typecheck`)**: PASS (0 errors)
+- **Tự động hóa CI (GitHub Actions)**: Đã thiết lập `.github/workflows/ci.yml` để tự động kiểm tra `npm run typecheck` trên mỗi commit / pull request lên nhánh `main`.
 - **Tương thích ngược**: Hỗ trợ fallback tính toán nếu `frameTimesMs` trống.
